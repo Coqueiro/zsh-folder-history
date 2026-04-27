@@ -26,13 +26,55 @@ Standalone zsh folder picker with `fzf` previews of commands used in each folder
 
 ## Install
 
+### Plain zsh
+
 Clone the repo and source the plugin file from your zsh config:
 
 ```zsh
-source ~/Github/zsh-folder-history/zsh-folder-history.plugin.zsh
+source /path/to/zsh-folder-history/zsh-folder-history.plugin.zsh
 ```
 
-No aliases are installed by default. Keybinding setup is optional.
+### Oh My Zsh
+
+Clone into your custom plugins directory:
+
+```zsh
+git clone https://github.com/<you>/zsh-folder-history.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-folder-history
+```
+
+Then source it from `~/.zshrc` or add it through your plugin bootstrap:
+
+```zsh
+source ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-folder-history/zsh-folder-history.plugin.zsh
+```
+
+### Antidote
+
+Add the repo to your bundle file, then load as usual:
+
+```txt
+<you>/zsh-folder-history
+```
+
+### Antigen
+
+```zsh
+antigen bundle <you>/zsh-folder-history
+```
+
+### Zinit
+
+```zsh
+zinit light <you>/zsh-folder-history
+```
+
+### Zplug
+
+```zsh
+zplug "<you>/zsh-folder-history"
+```
+
+No aliases or keybindings are installed by default. Bindings are opt-in.
 
 ## Usage
 
@@ -54,7 +96,7 @@ Notes for the wrapper:
 
 For real shell integration later, source the plugin from `~/.zshrc` and call `zfh` from the interactive shell.
 
-For live testing with hooks + Ctrl-H, a temporary file was also created:
+For live testing with hooks + Ctrl-H/Ctrl-K, a temporary file was also created:
 
 ```zsh
 source ~/.zshrc.zfh
@@ -64,8 +106,7 @@ That test file:
 
 - sources the plugin into your current interactive shell
 - enables the optional aliases
-- binds `Ctrl-H` to the picker via `zfh bindkey '^H'`
-- binds `Ctrl-K` to the command picker via `zfh bind-command-key '^K'`
+- enables auto-bind for both widgets
 - uses a separate state file: `~/.local/state/zsh-folder-history-test/directories`
 - uses a separate commands file: `~/.local/state/zsh-folder-history-test/commands.tsv`
 
@@ -99,9 +140,10 @@ zfh bind-command-key '^K'
 
 Shortcut summary:
 
-- `Ctrl-H`: open folder picker
-- `Ctrl-K`: open command picker directly
-- inside folder picker, `Ctrl-K`: open command picker for highlighted directory
+- bindings are opt-in by default
+- when enabled, `Ctrl-H`: open folder picker
+- when enabled, `Ctrl-K`: open command picker directly
+- when enabled and `ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=1`, inside folder picker `Ctrl-K`: open command picker for highlighted directory
 
 Run `zfh --help` to see the same instructions from the shell.
 
@@ -124,8 +166,10 @@ export ZSH_FOLDER_HISTORY_COMMANDS_FILE="$HOME/.local/state/zsh-folder-history/c
 export ZSH_FOLDER_HISTORY_MAX_DIRS=500
 export ZSH_FOLDER_HISTORY_MAX_COMMANDS=1000
 export ZSH_FOLDER_HISTORY_ENABLE_ALIASES=1
+export ZSH_FOLDER_HISTORY_AUTO_BIND=1
 export ZSH_FOLDER_HISTORY_BINDKEY='^H'
 export ZSH_FOLDER_HISTORY_COMMAND_BINDKEY='^K'
+export ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=1
 export ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY='ctrl-k'
 ```
 
@@ -136,10 +180,22 @@ Defaults:
 - `ZSH_FOLDER_HISTORY_MAX_DIRS`: `500`
 - `ZSH_FOLDER_HISTORY_MAX_COMMANDS`: `1000`
 - `ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR`: `1000`
+- `ZSH_FOLDER_HISTORY_AUTO_BIND`: `0`
+- `ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER`: `1`
+- `ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND`: `1`
 - `ZSH_FOLDER_HISTORY_ENABLE_ALIASES`: `0`
 - `ZSH_FOLDER_HISTORY_BINDKEY`: `^H`
 - `ZSH_FOLDER_HISTORY_COMMAND_BINDKEY`: `^K`
+- `ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK`: `1`
 - `ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY`: `ctrl-k`
+
+## Tests
+
+Run the lightweight zsh test suite:
+
+```zsh
+zsh tests/run.zsh
+```
 
 ## Roadmap
 

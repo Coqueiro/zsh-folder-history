@@ -5,12 +5,10 @@
 export ZSH_FOLDER_HISTORY_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/zsh-folder-history-test/directories"
 export ZSH_FOLDER_HISTORY_COMMANDS_FILE="${ZSH_FOLDER_HISTORY_FILE:h}/commands.tsv"
 export ZSH_FOLDER_HISTORY_ENABLE_ALIASES=1
+export ZSH_FOLDER_HISTORY_AUTO_BIND=1
 export ZSH_FOLDER_HISTORY_BINDKEY='^H'
 export ZSH_FOLDER_HISTORY_COMMAND_BINDKEY='^K'
+export ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=1
 export ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY='ctrl-k'
 
 source "$HOME/Github/zsh-folder-history/zsh-folder-history.plugin.zsh"
-
-# Match current macOS behavior.
-zfh bindkey "$ZSH_FOLDER_HISTORY_BINDKEY"
-zfh bind-command-key "$ZSH_FOLDER_HISTORY_COMMAND_BINDKEY"

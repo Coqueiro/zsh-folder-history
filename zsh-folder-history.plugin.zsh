@@ -13,8 +13,12 @@ zmodload zsh/datetime 2>/dev/null || true
 : ${ZSH_FOLDER_HISTORY_MAX_COMMANDS:=1000}
 : ${ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR:=$ZSH_FOLDER_HISTORY_MAX_COMMANDS}
 : ${ZSH_FOLDER_HISTORY_COMMANDS_FILE:=${ZSH_FOLDER_HISTORY_FILE:h}/commands.tsv}
+: ${ZSH_FOLDER_HISTORY_AUTO_BIND:=0}
+: ${ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER:=1}
+: ${ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND:=1}
 : ${ZSH_FOLDER_HISTORY_BINDKEY:=^H}
 : ${ZSH_FOLDER_HISTORY_COMMAND_BINDKEY:=^K}
+: ${ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK:=1}
 : ${ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY:=ctrl-k}
 : ${ZSH_FOLDER_HISTORY_ENABLE_ALIASES:=0}
 
@@ -627,6 +631,7 @@ zfh_pick() {
   local query="$*"
   local temp_dir output key selection selected_dir selected_command
   local exit_code
+  local -a fzf_args=()
 
   command -v fzf >/dev/null 2>&1 || {
     print -u2 -- 'zfh: fzf is required'
@@ -639,15 +644,21 @@ zfh_pick() {
   _zfh_refresh_commands
   temp_dir=$(command mktemp -d "${TMPDIR:-/tmp}/zsh-folder-history.XXXXXX") || return 1
 
+  fzf_args=(
+    --delimiter=$'\t'
+    --with-nth=1
+    --prompt='folder-history> '
+    --preview="$(_zfh_fzf_preview_command)"
+    --preview-window='right,60%,wrap,nohidden'
+    --query "$query"
+  )
+
+  if (( ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK )); then
+    fzf_args+=(--expect="$ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY")
+  fi
+
   while true; do
-    output="$(_zfh_build_picker_input "$temp_dir" | fzf \
-      --delimiter=$'\t' \
-      --with-nth=1 \
-      --expect="$ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY" \
-      --prompt='folder-history> ' \
-      --preview="$(_zfh_fzf_preview_command)" \
-      --preview-window='right,60%,wrap,nohidden' \
-      --query "$query")"
+    output="$(_zfh_build_picker_input "$temp_dir" | fzf "${fzf_args[@]}")"
     exit_code=$?
 
     (( exit_code == 0 )) || {
@@ -655,11 +666,17 @@ zfh_pick() {
       return $exit_code
     }
 
-    key="${output%%$'\n'*}"
-    selection="${output#*$'\n'}"
+    if (( ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK )); then
+      key="${output%%$'\n'*}"
+      selection="${output#*$'\n'}"
+    else
+      key=''
+      selection="$output"
+    fi
+
     selected_dir="${selection%%$'\t'*}"
 
-    if [[ "$key" == "$ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY" ]]; then
+    if (( ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK )) && [[ "$key" == "$ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY" ]]; then
       [[ -n $selected_dir ]] || continue
       selected_command="$(zfh_command_pick "$selected_dir")"
       exit_code=$?
@@ -845,9 +862,10 @@ Usage:
 Notes:
   - Commands are timestamped and persisted across shell sessions.
   - Per-folder command history limit defaults to 1000 entries.
-  - Ctrl-H opens the folder picker by default.
-  - Ctrl-K opens the command picker directly by default.
-  - Inside the folder picker, press ctrl-k to search commands for the highlighted directory.
+  - No keybindings are installed automatically unless you opt in.
+  - Set ZSH_FOLDER_HISTORY_AUTO_BIND=1 to auto-bind on load.
+  - With auto-bind enabled, Ctrl-H opens folders and Ctrl-K opens command search by default.
+  - Inside the folder picker, ctrl-k opens command search by default; disable it with ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=0.
   - Preview panes are forced visible by default.
   - Source this plugin from your shell config; it cannot cd when executed as a script.
 EOF
@@ -911,7 +929,13 @@ fi
 
 if [[ -o interactive ]]; then
   _zfh_load_dirs
+  _zfh_load_commands
   _zfh_add_dir "$PWD"
   add-zsh-hook preexec _zfh_preexec
   add-zsh-hook chpwd _zfh_chpwd
+
+  if (( ZSH_FOLDER_HISTORY_AUTO_BIND )); then
+    (( ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER )) && zfh_bindkey "$ZSH_FOLDER_HISTORY_BINDKEY"
+    (( ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND )) && zfh_bind_command_key "$ZSH_FOLDER_HISTORY_COMMAND_BINDKEY"
+  fi
 fi
