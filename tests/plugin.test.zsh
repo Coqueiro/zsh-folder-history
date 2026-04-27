@@ -34,6 +34,7 @@ export ZSH_FOLDER_HISTORY_FILE="$XDG_STATE_HOME/zfh/directories"
 export ZSH_FOLDER_HISTORY_COMMANDS_FILE="$XDG_STATE_HOME/zfh/commands.tsv"
 export ZSH_FOLDER_HISTORY_AUTO_BIND=1
 export ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=1
+export ZSH_FOLDER_HISTORY_COMPACT_ON_LOAD=1
 
 setopt interactivecomments
 _zfh_test_zdotdir="$TEST_DIR/zdotdir"
@@ -64,9 +65,15 @@ raw_file=$(<"$ZSH_FOLDER_HISTORY_COMMANDS_FILE")
 assert_contains "$raw_file" $'echo hello' 'commands file should contain first command'
 assert_contains "$raw_file" $'echo world' 'commands file should contain second command'
 
+line_count_before=$(wc -l < "$ZSH_FOLDER_HISTORY_COMMANDS_FILE" | tr -d ' ')
+[[ "$line_count_before" -ge 2 ]] || fail 'append-only commands file should contain appended records'
+
 reloaded_output=$(zsh -fi <<'EOF'
 print -r -- "$(zfh commands "$PWD")"
 EOF
 )
 assert_contains "$reloaded_output" 'echo hello' 'reloaded commands should include first command'
 assert_contains "$reloaded_output" 'echo world' 'reloaded commands should include second command'
+
+line_count_after=$(wc -l < "$ZSH_FOLDER_HISTORY_COMMANDS_FILE" | tr -d ' ')
+[[ "$line_count_after" -le "$line_count_before" ]] || fail 'compaction on load should not grow commands file'

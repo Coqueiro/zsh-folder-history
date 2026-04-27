@@ -13,6 +13,7 @@ zmodload zsh/datetime 2>/dev/null || true
 : ${ZSH_FOLDER_HISTORY_MAX_COMMANDS:=1000}
 : ${ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR:=$ZSH_FOLDER_HISTORY_MAX_COMMANDS}
 : ${ZSH_FOLDER_HISTORY_COMMANDS_FILE:=${ZSH_FOLDER_HISTORY_FILE:h}/commands.tsv}
+: ${ZSH_FOLDER_HISTORY_COMPACT_ON_LOAD:=1}
 : ${ZSH_FOLDER_HISTORY_AUTO_BIND:=1}
 : ${ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER:=1}
 : ${ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND:=1}
@@ -254,6 +255,20 @@ _zfh_commands_lock_file() {
   print -r -- "${ZSH_FOLDER_HISTORY_COMMANDS_FILE}.lockfile"
 }
 
+_zfh_append_command_record() {
+  emulate -L zsh
+
+  local dir="${1:A}"
+  local record=$2
+  local lock_file
+
+  _zfh_ensure_state_file || return 1
+  lock_file="$(_zfh_commands_lock_file)"
+  _zfh_acquire_lock "$lock_file" || return 1
+  print -r -- "$dir"$'\t'"$record" >> "$ZSH_FOLDER_HISTORY_COMMANDS_FILE"
+  _zfh_release_lock
+}
+
 _zfh_fzf_preview_command() {
   emulate -L zsh
   print -r -- "sh -c '[ -f \"\$1\" ] && cat -- \"\$1\"' sh {2}"
@@ -446,24 +461,15 @@ _zfh_refresh_commands() {
   _zfh_load_commands
 }
 
-_zfh_save_commands() {
+_zfh_compact_commands() {
   emulate -L zsh
 
   local lock_file temp_file exit_code dir existing record
-  local -A memory_commands=()
-  local -a merged=()
 
   _zfh_ensure_state_file || return 1
-  memory_commands=("${(@kv)_zfh_commands}")
   lock_file="$(_zfh_commands_lock_file)"
   _zfh_acquire_lock "$lock_file" || return 1
   _zfh_load_commands
-
-  for dir in "${(@ok)memory_commands}"; do
-    merged=("${(@f)memory_commands[$dir]}" "${(@f)_zfh_commands[$dir]}")
-    merged=("${(@f)$(_zfh_trim_command_records "$ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR" "${merged[@]}")}")
-    _zfh_commands[$dir]="$(_zfh_join_lines "${merged[@]}")"
-  done
 
   temp_file=$(command mktemp "${ZSH_FOLDER_HISTORY_COMMANDS_FILE}.tmp.XXXXXX") || {
     _zfh_release_lock
@@ -554,7 +560,7 @@ _zfh_record_command() {
   record="$(_zfh_make_command_record "$sortkey" "$epoch" "$command_text")"
   record="${record%$'\n'}"
   _zfh_add_command_record "$dir" "$record"
-  _zfh_save_commands
+  _zfh_append_command_record "$dir" "$record"
 }
 
 _zfh_print_commands_for_dir() {
@@ -868,6 +874,7 @@ Notes:
   - Disable the command widget with ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND=0.
   - Inside the folder picker, ctrl-k opens command search by default.
   - Disable folder-picker command search with ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=0.
+  - Command writes are append-only during execution; compaction happens on load by default.
   - Preview panes are forced visible by default.
   - Environment variables:
       ZSH_FOLDER_HISTORY_FILE
@@ -875,6 +882,7 @@ Notes:
       ZSH_FOLDER_HISTORY_MAX_DIRS
       ZSH_FOLDER_HISTORY_MAX_COMMANDS
       ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR
+      ZSH_FOLDER_HISTORY_COMPACT_ON_LOAD
       ZSH_FOLDER_HISTORY_AUTO_BIND
       ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER
       ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND
@@ -945,7 +953,11 @@ fi
 
 if [[ -o interactive ]]; then
   _zfh_load_dirs
-  _zfh_load_commands
+  if (( ZSH_FOLDER_HISTORY_COMPACT_ON_LOAD )); then
+    _zfh_compact_commands
+  else
+    _zfh_load_commands
+  fi
   _zfh_add_dir "$PWD"
   add-zsh-hook preexec _zfh_preexec
   add-zsh-hook chpwd _zfh_chpwd
