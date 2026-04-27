@@ -6,7 +6,7 @@ export ZSH_FOLDER_HISTORY_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/zsh-folder
 export ZSH_FOLDER_HISTORY_COMMANDS_FILE="${ZSH_FOLDER_HISTORY_FILE:h}/commands.tsv"
 export ZSH_FOLDER_HISTORY_ENABLE_ALIASES=1
 export ZSH_FOLDER_HISTORY_BINDKEY='^H'
-export ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY='ctrl-y'
+export ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY='alt-enter'
 
 source "$HOME/Github/zsh-folder-history/zsh-folder-history.plugin.zsh"
 
