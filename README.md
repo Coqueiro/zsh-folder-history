@@ -65,6 +65,7 @@ That test file:
 - sources the plugin into your current interactive shell
 - enables the optional aliases
 - binds `Ctrl-H` to the picker via `zfh bindkey '^H'`
+- binds `Ctrl-K` to the command picker via `zfh bind-command-key '^K'`
 - uses a separate state file: `~/.local/state/zsh-folder-history-test/directories`
 - uses a separate commands file: `~/.local/state/zsh-folder-history-test/commands.tsv`
 
@@ -83,6 +84,7 @@ zfh commands
 zfh commands ~/Github
 zfh command-pick ~/Github
 zfh bindkey '^H'
+zfh bind-command-key '^K'
 ```
 
 ### Commands
@@ -92,9 +94,10 @@ zfh bindkey '^H'
 - `zfh commands [dir]`: print persisted timestamped commands for a directory
 - `zfh command-pick [dir] [query]`: search commands for one directory and print the selected command
 - `zfh bindkey [key]`: register the zle widget and bind a key (default: `^H`)
+- `zfh bind-command-key [key]`: register the command picker widget and bind a key (default: `^K`)
 - `zfh help`: print help
 
-Inside the folder picker, press the key from `ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY` (default: `ctrl-y`) to open the command picker for the highlighted directory.
+Inside the folder picker, press the key from `ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY` (default: `ctrl-k`) to open the command picker for the highlighted directory.
 
 Inside the command picker, the main list shows timestamp + truncated command line, and the preview shows the full command.
 
@@ -116,7 +119,8 @@ export ZSH_FOLDER_HISTORY_MAX_DIRS=500
 export ZSH_FOLDER_HISTORY_MAX_COMMANDS=1000
 export ZSH_FOLDER_HISTORY_ENABLE_ALIASES=1
 export ZSH_FOLDER_HISTORY_BINDKEY='^H'
-export ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY='alt-enter'
+export ZSH_FOLDER_HISTORY_COMMAND_BINDKEY='^K'
+export ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY='ctrl-k'
 ```
 
 Defaults:
@@ -128,7 +132,8 @@ Defaults:
 - `ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR`: `1000`
 - `ZSH_FOLDER_HISTORY_ENABLE_ALIASES`: `0`
 - `ZSH_FOLDER_HISTORY_BINDKEY`: `^H`
-- `ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY`: `alt-enter`
+- `ZSH_FOLDER_HISTORY_COMMAND_BINDKEY`: `^K`
+- `ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY`: `ctrl-k`
 
 ## Roadmap
 

@@ -14,13 +14,15 @@ zmodload zsh/datetime 2>/dev/null || true
 : ${ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR:=$ZSH_FOLDER_HISTORY_MAX_COMMANDS}
 : ${ZSH_FOLDER_HISTORY_COMMANDS_FILE:=${ZSH_FOLDER_HISTORY_FILE:h}/commands.tsv}
 : ${ZSH_FOLDER_HISTORY_BINDKEY:=^H}
-: ${ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY:=alt-enter}
+: ${ZSH_FOLDER_HISTORY_COMMAND_BINDKEY:=^K}
+: ${ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY:=ctrl-k}
 : ${ZSH_FOLDER_HISTORY_ENABLE_ALIASES:=0}
 
 typeset -ga _zfh_dirs=()
 typeset -gA _zfh_commands=()
 typeset -gi _zfh_internal_cd=0
-typeset -gi _zfh_widget_registered=0
+typeset -gi _zfh_folder_widget_registered=0
+typeset -gi _zfh_command_widget_registered=0
 typeset -gi _zfh_lock_fd=-1
 typeset -gi _zfh_widget_active=0
 typeset -gi _zfh_record_seq=0
@@ -745,9 +747,15 @@ _zfh_register_widget() {
     return 1
   }
 
-  (( _zfh_widget_registered )) && return 0
-  zle -N zfh_widget
-  _zfh_widget_registered=1
+  (( _zfh_folder_widget_registered )) || {
+    zle -N zfh_widget
+    _zfh_folder_widget_registered=1
+  }
+
+  (( _zfh_command_widget_registered )) || {
+    zle -N zfh_command_widget
+    _zfh_command_widget_registered=1
+  }
 }
 
 zfh_widget() {
@@ -778,12 +786,48 @@ zfh_widget() {
   return $exit_code
 }
 
+zfh_command_widget() {
+  emulate -L zsh
+
+  local original_buffer=$BUFFER
+  local original_cursor=$CURSOR
+  local exit_code
+
+  BUFFER=''
+  CURSOR=0
+  zle -I
+
+  _zfh_widget_active=1
+  zfh_command_pick "$PWD"
+  exit_code=$?
+  _zfh_widget_active=0
+
+  if [[ -n $_zfh_last_selected_command ]]; then
+    BUFFER=$_zfh_last_selected_command
+    CURSOR=${#BUFFER}
+  else
+    BUFFER=$original_buffer
+    CURSOR=$original_cursor
+  fi
+
+  zle reset-prompt
+  return $exit_code
+}
+
 zfh_bindkey() {
   emulate -L zsh
 
   local key="${1:-$ZSH_FOLDER_HISTORY_BINDKEY}"
   _zfh_register_widget || return 1
   bindkey "$key" zfh_widget
+}
+
+zfh_bind_command_key() {
+  emulate -L zsh
+
+  local key="${1:-$ZSH_FOLDER_HISTORY_COMMAND_BINDKEY}"
+  _zfh_register_widget || return 1
+  bindkey "$key" zfh_command_widget
 }
 
 zfh_help() {
@@ -797,12 +841,14 @@ Usage:
   zfh commands [dir]
   zfh command-pick [dir] [query]
   zfh bindkey [key]
+  zfh bind-command-key [key]
   zfh help
 
 Notes:
   - Commands are timestamped and persisted across shell sessions.
   - Per-folder command history limit defaults to 1000 entries.
   - Folder picker header advertises the key that opens command search.
+  - The command picker can also be opened directly from the shell widget binding.
   - Source this plugin from your shell config; it cannot cd when executed as a script.
 EOF
 }
@@ -833,6 +879,10 @@ zfh() {
     (bindkey)
       shift
       zfh_bindkey "${1:-$ZSH_FOLDER_HISTORY_BINDKEY}"
+      ;;
+    (bind-command-key)
+      shift
+      zfh_bind_command_key "${1:-$ZSH_FOLDER_HISTORY_COMMAND_BINDKEY}"
       ;;
     (help|-h|--help)
       zfh_help
