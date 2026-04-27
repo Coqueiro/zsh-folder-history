@@ -645,9 +645,8 @@ zfh_pick() {
       --with-nth=1 \
       --expect="$ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY" \
       --prompt='folder-history> ' \
-      --header="$ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY: browse commands for highlighted folder" \
       --preview="$(_zfh_fzf_preview_command)" \
-      --preview-window='right,60%,wrap' \
+      --preview-window='right,60%,wrap,nohidden' \
       --query "$query")"
     exit_code=$?
 
@@ -725,9 +724,8 @@ zfh_command_pick() {
     --delimiter=$'\t' \
     --with-nth=1 \
     --prompt='command-history> ' \
-    --header='enter: print selected command | preview: full command' \
     --preview="$(_zfh_fzf_preview_command)" \
-    --preview-window='right,60%,wrap' \
+    --preview-window='right,60%,wrap,nohidden' \
     --query "$query")"
   exit_code=$?
 
@@ -847,8 +845,10 @@ Usage:
 Notes:
   - Commands are timestamped and persisted across shell sessions.
   - Per-folder command history limit defaults to 1000 entries.
-  - Folder picker header advertises the key that opens command search.
-  - The command picker can also be opened directly from the shell widget binding.
+  - Ctrl-H opens the folder picker by default.
+  - Ctrl-K opens the command picker directly by default.
+  - Inside the folder picker, press ctrl-k to search commands for the highlighted directory.
+  - Preview panes are forced visible by default.
   - Source this plugin from your shell config; it cannot cd when executed as a script.
 EOF
 }

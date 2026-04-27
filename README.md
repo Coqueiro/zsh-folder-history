@@ -97,7 +97,13 @@ zfh bind-command-key '^K'
 - `zfh bind-command-key [key]`: register the command picker widget and bind a key (default: `^K`)
 - `zfh help`: print help
 
-Inside the folder picker, press the key from `ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY` (default: `ctrl-k`) to open the command picker for the highlighted directory.
+Shortcut summary:
+
+- `Ctrl-H`: open folder picker
+- `Ctrl-K`: open command picker directly
+- inside folder picker, `Ctrl-K`: open command picker for highlighted directory
+
+Run `zfh --help` to see the same instructions from the shell.
 
 Inside the command picker, the main list shows timestamp + truncated command line, and the preview shows the full command.
 
