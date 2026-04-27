@@ -4,16 +4,15 @@ if [[ -n ${__zsh_folder_history_loaded:-} ]]; then
   return 0
 fi
 typeset -g __zsh_folder_history_loaded=1
+typeset -g _zfh_plugin_file=${${(%):-%x}:A}
 
 autoload -U add-zsh-hook
 zmodload zsh/datetime 2>/dev/null || true
 
 : ${ZSH_FOLDER_HISTORY_FILE:=${XDG_STATE_HOME:-$HOME/.local/state}/zsh-folder-history/directories}
 : ${ZSH_FOLDER_HISTORY_MAX_DIRS:=500}
-: ${ZSH_FOLDER_HISTORY_MAX_COMMANDS:=1000}
-: ${ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR:=$ZSH_FOLDER_HISTORY_MAX_COMMANDS}
+: ${ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR:=1000}
 : ${ZSH_FOLDER_HISTORY_COMMANDS_FILE:=${ZSH_FOLDER_HISTORY_FILE:h}/commands.tsv}
-: ${ZSH_FOLDER_HISTORY_COMPACT_ON_COMMAND:=1}
 : ${ZSH_FOLDER_HISTORY_AUTO_BIND:=1}
 : ${ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER:=1}
 : ${ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND:=1}
@@ -24,7 +23,6 @@ zmodload zsh/datetime 2>/dev/null || true
 : ${ZSH_FOLDER_HISTORY_ENABLE_ALIASES:=0}
 
 typeset -ga _zfh_dirs=()
-typeset -gA _zfh_commands=()
 typeset -gi _zfh_internal_cd=0
 typeset -gi _zfh_folder_widget_registered=0
 typeset -gi _zfh_command_widget_registered=0
@@ -255,6 +253,19 @@ _zfh_commands_lock_file() {
   print -r -- "${ZSH_FOLDER_HISTORY_COMMANDS_FILE}.lockfile"
 }
 
+_zfh_append_dir_record() {
+  emulate -L zsh
+
+  local dir="${1:A}"
+  local lock_file
+
+  _zfh_ensure_state_file || return 1
+  lock_file="$(_zfh_lock_file)"
+  _zfh_acquire_lock "$lock_file" || return 1
+  print -r -- "$dir" >> "$ZSH_FOLDER_HISTORY_FILE"
+  _zfh_release_lock
+}
+
 _zfh_append_command_record() {
   emulate -L zsh
 
@@ -267,6 +278,71 @@ _zfh_append_command_record() {
   _zfh_acquire_lock "$lock_file" || return 1
   print -r -- "$dir"$'\t'"$record" >> "$ZSH_FOLDER_HISTORY_COMMANDS_FILE"
   _zfh_release_lock
+}
+
+_zfh_records_for_dir() {
+  emulate -L zsh
+
+  local target_dir="${1:A}"
+  local dir sortkey epoch command_text record
+  local -a records=()
+
+  _zfh_ensure_state_file || return 1
+  [[ -r $ZSH_FOLDER_HISTORY_COMMANDS_FILE ]] || return 0
+
+  while IFS=$'\t' read -r dir sortkey epoch command_text; do
+    [[ -n $dir && -n $sortkey && -n $epoch && -n $command_text ]] || continue
+    [[ "${dir:A}" == "$target_dir" ]] || continue
+    record="${sortkey}"$'\t'"${epoch}"$'\t'"${command_text}"
+    records+=("$record")
+  done < "$ZSH_FOLDER_HISTORY_COMMANDS_FILE"
+
+  _zfh_trim_command_records "$ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR" "${records[@]}"
+}
+
+_zfh_trim_commands_for_dir() {
+  emulate -L zsh
+
+  local target_dir="${1:A}"
+  local lock_file temp_file exit_code dir sortkey epoch command_text
+  local record
+  local -a kept_records=()
+
+  _zfh_ensure_state_file || return 1
+  lock_file="$(_zfh_commands_lock_file)"
+  _zfh_acquire_lock "$lock_file" || return 1
+
+  kept_records=("${(@f)$(_zfh_records_for_dir "$target_dir")}")
+  temp_file=$(command mktemp "${ZSH_FOLDER_HISTORY_COMMANDS_FILE}.tmp.XXXXXX") || {
+    _zfh_release_lock
+    return 1
+  }
+
+  {
+    if [[ -r $ZSH_FOLDER_HISTORY_COMMANDS_FILE ]]; then
+      while IFS=$'\t' read -r dir sortkey epoch command_text; do
+        [[ -n $dir && -n $sortkey && -n $epoch && -n $command_text ]] || continue
+        if [[ "${dir:A}" == "$target_dir" ]]; then
+          continue
+        fi
+        print -r -- "$dir"$'\t'"$sortkey"$'\t'"$epoch"$'\t'"$command_text"
+      done < "$ZSH_FOLDER_HISTORY_COMMANDS_FILE"
+    fi
+
+    for record in "${kept_records[@]}"; do
+      print -r -- "$target_dir"$'\t'"$record"
+    done
+  } >| "$temp_file"
+  exit_code=$?
+
+  if (( exit_code == 0 )); then
+    command mv -f -- "$temp_file" "$ZSH_FOLDER_HISTORY_COMMANDS_FILE"
+    exit_code=$?
+  fi
+
+  [[ -f $temp_file ]] && command rm -f -- "$temp_file"
+  _zfh_release_lock
+  return $exit_code
 }
 
 _zfh_fzf_preview_command() {
@@ -413,113 +489,26 @@ _zfh_load_dirs() {
   _zfh_dirs=("${(@f)$(_zfh_read_state_dirs)}")
 }
 
-_zfh_add_command_record() {
+_zfh_compact_dirs() {
   emulate -L zsh
 
-  local dir="${1:A}"
-  local record=$2
-  local existing
-  local -a merged=()
-
-  [[ -n $dir ]] || return 0
-  [[ -n $record ]] || return 0
-
-  existing="${_zfh_commands[$dir]-}"
-  merged=("$record" "${(@f)existing}")
-  merged=("${(@f)$(_zfh_trim_command_records "$ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR" "${merged[@]}")}")
-  _zfh_commands[$dir]="$(_zfh_join_lines "${merged[@]}")"
-}
-
-_zfh_load_commands() {
-  emulate -L zsh
-
-  local dir sortkey epoch command_text record current
-
-  _zfh_ensure_state_file || return 1
-  [[ -r $ZSH_FOLDER_HISTORY_COMMANDS_FILE ]] || return 0
-
-  _zfh_commands=()
-
-  while IFS=$'\t' read -r dir sortkey epoch command_text; do
-    [[ -n $dir && -n $sortkey && -n $epoch && -n $command_text ]] || continue
-    record="${sortkey}"$'\t'"${epoch}"$'\t'"${command_text}"
-    current="${_zfh_commands[$dir]-}"
-    if [[ -n $current ]]; then
-      _zfh_commands[$dir]+=$'\n'"$record"
-    else
-      _zfh_commands[$dir]="$record"
-    fi
-  done < "$ZSH_FOLDER_HISTORY_COMMANDS_FILE"
-
-  for dir in "${(@ok)_zfh_commands}"; do
-    _zfh_commands[$dir]="$(_zfh_join_lines "${(@f)$(_zfh_trim_command_records "$ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR" "${(@f)_zfh_commands[$dir]}")}")"
-  done
-}
-
-_zfh_refresh_commands() {
-  emulate -L zsh
-  _zfh_load_commands
-}
-
-_zfh_compact_commands() {
-  emulate -L zsh
-
-  local lock_file temp_file exit_code dir existing record
-
-  _zfh_ensure_state_file || return 1
-  lock_file="$(_zfh_commands_lock_file)"
-  _zfh_acquire_lock "$lock_file" || return 1
-  _zfh_load_commands
-
-  temp_file=$(command mktemp "${ZSH_FOLDER_HISTORY_COMMANDS_FILE}.tmp.XXXXXX") || {
-    _zfh_release_lock
-    return 1
-  }
-
-  {
-    for dir in "${(@ok)_zfh_commands}"; do
-      existing="${_zfh_commands[$dir]-}"
-      [[ -n $existing ]] || continue
-      for record in "${(@f)existing}"; do
-        print -r -- "$dir"$'\t'"$record"
-      done
-    done
-  } >| "$temp_file"
-  exit_code=$?
-
-  if (( exit_code == 0 )); then
-    command mv -f -- "$temp_file" "$ZSH_FOLDER_HISTORY_COMMANDS_FILE"
-    exit_code=$?
-  fi
-
-  [[ -f $temp_file ]] && command rm -f -- "$temp_file"
-  _zfh_release_lock
-  return $exit_code
-}
-
-_zfh_save_dirs() {
-  emulate -L zsh
-
-  local lock_file
-  local temp_file exit_code
-  local -a disk_dirs=()
+  local lock_file temp_file exit_code
+  local -a compacted=()
 
   _zfh_ensure_state_file || return 1
   lock_file="$(_zfh_lock_file)"
   _zfh_acquire_lock "$lock_file" || return 1
-
-  disk_dirs=("${(@f)$(_zfh_read_state_dirs)}")
-  _zfh_dirs=("${(@f)$(_zfh_filter_existing_dirs "${_zfh_dirs[@]}" "${disk_dirs[@]}")}")
+  compacted=("${(@f)$(_zfh_read_state_dirs)}")
 
   temp_file=$(command mktemp "${ZSH_FOLDER_HISTORY_FILE}.tmp.XXXXXX") || {
     _zfh_release_lock
     return 1
   }
 
-  if (( ${#_zfh_dirs[@]} == 0 )); then
+  if (( ${#compacted[@]} == 0 )); then
     : >| "$temp_file"
   else
-    print -rl -- "${_zfh_dirs[@]}" >| "$temp_file"
+    print -rl -- "${compacted[@]}" >| "$temp_file"
   fi
 
   exit_code=$?
@@ -533,6 +522,40 @@ _zfh_save_dirs() {
   return $exit_code
 }
 
+_zfh_legacy_dirhistory_dirs() {
+  emulate -L zsh
+
+  local legacy_file="${HOME}/.dirhistory/.dirhistory"
+  local dir
+  local -a imported=()
+
+  [[ -r $legacy_file ]] || return 0
+
+  for dir in "${(@f)$(<"$legacy_file")}"; do
+    [[ -d $dir ]] || continue
+    imported+=("${dir:A}")
+  done
+
+  _zfh_dedupe_limit "$ZSH_FOLDER_HISTORY_MAX_DIRS" "${imported[@]}"
+}
+
+_zfh_import_legacy_dirhistory() {
+  emulate -L zsh
+
+  local legacy_file="${HOME}/.dirhistory/.dirhistory"
+  local -a imported=()
+
+  [[ -r $legacy_file ]] || return 0
+  (( ${#_zfh_dirs[@]} == 0 )) || return 0
+
+  imported=("${(@f)$(_zfh_legacy_dirhistory_dirs)}")
+
+  (( ${#imported[@]} == 0 )) && return 0
+  _zfh_dirs=("${(@f)$(_zfh_dedupe_limit "$ZSH_FOLDER_HISTORY_MAX_DIRS" "${imported[@]}")}")
+  _zfh_compact_dirs
+  _zfh_load_dirs
+}
+
 _zfh_add_dir() {
   emulate -L zsh
 
@@ -540,7 +563,7 @@ _zfh_add_dir() {
   [[ -n $dir && -d $dir ]] || return 0
 
   _zfh_dirs=("${(@f)$(_zfh_dedupe_limit "$ZSH_FOLDER_HISTORY_MAX_DIRS" "$dir" "${_zfh_dirs[@]}")}")
-  _zfh_save_dirs
+  _zfh_append_dir_record "$dir"
 }
 
 _zfh_record_command() {
@@ -559,7 +582,6 @@ _zfh_record_command() {
   epoch="$(_zfh_now_epoch)"
   record="$(_zfh_make_command_record "$sortkey" "$epoch" "$command_text")"
   record="${record%$'\n'}"
-  _zfh_add_command_record "$dir" "$record"
   _zfh_append_command_record "$dir" "$record"
 }
 
@@ -567,8 +589,11 @@ _zfh_print_commands_for_dir() {
   emulate -L zsh
 
   local dir="${1:A}"
-  local commands="${_zfh_commands[$dir]-}"
+  local commands
   local record
+
+  _zfh_trim_commands_for_dir "$dir"
+  commands="$(_zfh_records_for_dir "$dir")"
 
   if [[ -z $commands ]]; then
     print -r -- 'No commands recorded for this directory.'
@@ -600,9 +625,12 @@ _zfh_build_command_picker_input() {
 
   local dir="${1:A}"
   local temp_dir=$2
-  local commands="${_zfh_commands[$dir]-}"
+  local commands
   local record preview_file display command_text
   local -i index=0
+
+  _zfh_trim_commands_for_dir "$dir"
+  commands="$(_zfh_records_for_dir "$dir")"
 
   for record in "${(@f)commands}"; do
     (( index++ ))
@@ -644,11 +672,9 @@ zfh_pick() {
     return 1
   }
 
-  (( ZSH_FOLDER_HISTORY_COMPACT_ON_COMMAND )) && _zfh_compact_commands
   _zfh_last_selected_command=''
   _zfh_add_dir "$PWD"
   _zfh_refresh_dirs
-  _zfh_refresh_commands
   temp_dir=$(command mktemp -d "${TMPDIR:-/tmp}/zsh-folder-history.XXXXXX") || return 1
 
   fzf_args=(
@@ -735,9 +761,8 @@ zfh_command_pick() {
   }
 
   dir="${dir:A}"
-  (( ZSH_FOLDER_HISTORY_COMPACT_ON_COMMAND )) && _zfh_compact_commands
-  _zfh_refresh_commands
-  commands="${_zfh_commands[$dir]-}"
+  _zfh_trim_commands_for_dir "$dir"
+  commands="$(_zfh_records_for_dir "$dir")"
 
   if [[ -z $commands ]]; then
     print -u2 -- "zfh: no commands recorded for $dir"
@@ -853,6 +878,19 @@ zfh_bind_command_key() {
   bindkey "$key" zfh_command_widget
 }
 
+zfh_import_dirhistory() {
+  emulate -L zsh
+
+  local -a imported=()
+
+  imported=("${(@f)$(_zfh_legacy_dirhistory_dirs)}")
+  (( ${#imported[@]} == 0 )) && return 0
+
+  _zfh_dirs=("${(@f)$(_zfh_dedupe_limit "$ZSH_FOLDER_HISTORY_MAX_DIRS" "${_zfh_dirs[@]}" "${imported[@]}")}")
+  _zfh_compact_dirs
+  _zfh_load_dirs
+}
+
 zfh_help() {
   cat <<'EOF'
 zfh - zsh folder history picker
@@ -863,6 +901,7 @@ Usage:
   zfh list
   zfh commands [dir]
   zfh command-pick [dir] [query]
+  zfh import-dirhistory
   zfh bindkey [key]
   zfh bind-command-key [key]
   zfh help
@@ -876,15 +915,14 @@ Notes:
   - Disable the command widget with ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND=0.
   - Inside the folder picker, ctrl-k opens command search by default.
   - Disable folder-picker command search with ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=0.
-  - Command writes are append-only during execution; compaction happens when zfh commands run by default.
+  - Folder history appends on navigation and compacts when zfh folder-history commands run.
+  - Command history appends on execution and trims only for the requested directory.
   - Preview panes are forced visible by default.
   - Environment variables:
       ZSH_FOLDER_HISTORY_FILE
       ZSH_FOLDER_HISTORY_COMMANDS_FILE
-      ZSH_FOLDER_HISTORY_MAX_DIRS
-      ZSH_FOLDER_HISTORY_MAX_COMMANDS
       ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR
-      ZSH_FOLDER_HISTORY_COMPACT_ON_COMMAND
+      ZSH_FOLDER_HISTORY_MAX_DIRS
       ZSH_FOLDER_HISTORY_AUTO_BIND
       ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER
       ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND
@@ -905,20 +943,24 @@ zfh() {
   case "$subcommand" in
     (pick)
       shift
+      _zfh_compact_dirs
       zfh_pick "$*"
       ;;
     (list)
+      _zfh_compact_dirs
       _zfh_refresh_dirs
       print -rl -- "${_zfh_dirs[@]}"
       ;;
     (commands)
       shift
-      _zfh_refresh_commands
       _zfh_print_commands_for_dir "${1:-$PWD}"
       ;;
     (command-pick)
       shift
       zfh_command_pick "$@"
+      ;;
+    (import-dirhistory)
+      zfh_import_dirhistory
       ;;
     (bindkey)
       shift
@@ -955,7 +997,7 @@ fi
 
 if [[ -o interactive ]]; then
   _zfh_load_dirs
-  _zfh_load_commands
+  _zfh_import_legacy_dirhistory
   _zfh_add_dir "$PWD"
   add-zsh-hook preexec _zfh_preexec
   add-zsh-hook chpwd _zfh_chpwd

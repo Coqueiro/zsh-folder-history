@@ -34,7 +34,7 @@ export ZSH_FOLDER_HISTORY_FILE="$XDG_STATE_HOME/zfh/directories"
 export ZSH_FOLDER_HISTORY_COMMANDS_FILE="$XDG_STATE_HOME/zfh/commands.tsv"
 export ZSH_FOLDER_HISTORY_AUTO_BIND=1
 export ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=1
-export ZSH_FOLDER_HISTORY_COMPACT_ON_COMMAND=1
+export ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR=2
 
 setopt interactivecomments
 _zfh_test_zdotdir="$TEST_DIR/zdotdir"
@@ -76,4 +76,30 @@ assert_contains "$reloaded_output" 'echo hello' 'reloaded commands should includ
 assert_contains "$reloaded_output" 'echo world' 'reloaded commands should include second command'
 
 line_count_after=$(wc -l < "$ZSH_FOLDER_HISTORY_COMMANDS_FILE" | tr -d ' ')
-[[ "$line_count_after" -le "$line_count_before" ]] || fail 'compaction on command should not grow commands file'
+assert_eq "$line_count_before" "$line_count_after" 'append-only command file should not be compacted'
+
+zsh -fi <<'EOF'
+_zfh_record_command "$PWD" 'echo third'
+print -r -- "$(zfh commands "$PWD")"
+EOF
+
+trimmed_output=$(zsh -fi <<'EOF'
+print -r -- "$(zfh commands "$PWD")"
+EOF
+)
+[[ "$trimmed_output" == *'echo third'* ]] || fail 'trimmed output should include newest command'
+[[ "$trimmed_output" == *'echo world'* ]] || fail 'trimmed output should include second newest command'
+[[ "$trimmed_output" != *'echo hello'* ]] || fail 'trimmed output should drop oldest command beyond per-dir cap'
+
+mkdir -p "$HOME/.dirhistory"
+print -r -- "$REPO_DIR" >| "$HOME/.dirhistory/.dirhistory"
+
+legacy_dir_output=$(HOME="$HOME" XDG_STATE_HOME="$XDG_STATE_HOME" zsh -fi <<'EOF'
+zfh import-dirhistory >/dev/null
+zfh list
+EOF
+)
+assert_contains "$legacy_dir_output" "$REPO_DIR" 'legacy dirhistory should be imported into zfh directories'
+
+line_count_after_import=$(wc -l < "$ZSH_FOLDER_HISTORY_FILE" | tr -d ' ')
+[[ "$line_count_after_import" -ge 1 ]] || fail 'folder history file should contain imported directories'
