@@ -32,7 +32,7 @@ export HOME="$TEST_DIR/home"
 export XDG_STATE_HOME="$TEST_DIR/state"
 export ZSH_FOLDER_HISTORY_FILE="$XDG_STATE_HOME/zfh/directories"
 export ZSH_FOLDER_HISTORY_COMMANDS_FILE="$XDG_STATE_HOME/zfh/commands.tsv"
-export ZSH_FOLDER_HISTORY_AUTO_BIND=0
+export ZSH_FOLDER_HISTORY_AUTO_BIND=1
 export ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=1
 
 setopt interactivecomments
@@ -45,6 +45,8 @@ print -r -- "source $PLUGIN_FILE" >| "$ZDOTDIR/.zshrc"
 zsh -fi <<'EOF'
 [[ -f $ZSH_FOLDER_HISTORY_FILE ]] || exit 11
 [[ -f $ZSH_FOLDER_HISTORY_COMMANDS_FILE ]] || exit 12
+[[ "$(bindkey '^H')" == *'zfh_widget'* ]] || exit 15
+[[ "$(bindkey '^K')" == *'zfh_command_widget'* ]] || exit 16
 _zfh_record_command "$PWD" 'echo hello'
 _zfh_record_command "$PWD" 'echo world'
 commands_output=$(zfh commands "$PWD")

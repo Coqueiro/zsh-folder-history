@@ -13,7 +13,7 @@ zmodload zsh/datetime 2>/dev/null || true
 : ${ZSH_FOLDER_HISTORY_MAX_COMMANDS:=1000}
 : ${ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR:=$ZSH_FOLDER_HISTORY_MAX_COMMANDS}
 : ${ZSH_FOLDER_HISTORY_COMMANDS_FILE:=${ZSH_FOLDER_HISTORY_FILE:h}/commands.tsv}
-: ${ZSH_FOLDER_HISTORY_AUTO_BIND:=0}
+: ${ZSH_FOLDER_HISTORY_AUTO_BIND:=1}
 : ${ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER:=1}
 : ${ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND:=1}
 : ${ZSH_FOLDER_HISTORY_BINDKEY:=^H}
@@ -862,11 +862,27 @@ Usage:
 Notes:
   - Commands are timestamped and persisted across shell sessions.
   - Per-folder command history limit defaults to 1000 entries.
-  - No keybindings are installed automatically unless you opt in.
-  - Set ZSH_FOLDER_HISTORY_AUTO_BIND=1 to auto-bind on load.
-  - With auto-bind enabled, Ctrl-H opens folders and Ctrl-K opens command search by default.
-  - Inside the folder picker, ctrl-k opens command search by default; disable it with ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=0.
+  - Default bindings: Ctrl-H opens folders and Ctrl-K opens command search.
+  - Disable automatic binding with ZSH_FOLDER_HISTORY_AUTO_BIND=0.
+  - Disable the folder widget with ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER=0.
+  - Disable the command widget with ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND=0.
+  - Inside the folder picker, ctrl-k opens command search by default.
+  - Disable folder-picker command search with ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=0.
   - Preview panes are forced visible by default.
+  - Environment variables:
+      ZSH_FOLDER_HISTORY_FILE
+      ZSH_FOLDER_HISTORY_COMMANDS_FILE
+      ZSH_FOLDER_HISTORY_MAX_DIRS
+      ZSH_FOLDER_HISTORY_MAX_COMMANDS
+      ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR
+      ZSH_FOLDER_HISTORY_AUTO_BIND
+      ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER
+      ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND
+      ZSH_FOLDER_HISTORY_BINDKEY
+      ZSH_FOLDER_HISTORY_COMMAND_BINDKEY
+      ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK
+      ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY
+      ZSH_FOLDER_HISTORY_ENABLE_ALIASES
   - Source this plugin from your shell config; it cannot cd when executed as a script.
 EOF
 }

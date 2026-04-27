@@ -74,7 +74,17 @@ zinit light <you>/zsh-folder-history
 zplug "<you>/zsh-folder-history"
 ```
 
-No aliases or keybindings are installed by default. Bindings are opt-in.
+Aliases are still opt-in. The default shell bindings are enabled on load:
+
+- `Ctrl-H`: folder picker
+- `Ctrl-K`: command picker
+- inside folder picker, `Ctrl-K`: command picker for the highlighted directory
+
+To disable default binding setup:
+
+```zsh
+export ZSH_FOLDER_HISTORY_AUTO_BIND=0
+```
 
 ## Usage
 
@@ -140,10 +150,9 @@ zfh bind-command-key '^K'
 
 Shortcut summary:
 
-- bindings are opt-in by default
-- when enabled, `Ctrl-H`: open folder picker
-- when enabled, `Ctrl-K`: open command picker directly
-- when enabled and `ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=1`, inside folder picker `Ctrl-K`: open command picker for highlighted directory
+- `Ctrl-H`: open folder picker
+- `Ctrl-K`: open command picker directly
+- with `ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=1`, inside folder picker `Ctrl-K`: open command picker for highlighted directory
 
 Run `zfh --help` to see the same instructions from the shell.
 
@@ -167,11 +176,29 @@ export ZSH_FOLDER_HISTORY_MAX_DIRS=500
 export ZSH_FOLDER_HISTORY_MAX_COMMANDS=1000
 export ZSH_FOLDER_HISTORY_ENABLE_ALIASES=1
 export ZSH_FOLDER_HISTORY_AUTO_BIND=1
+export ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER=1
+export ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND=1
 export ZSH_FOLDER_HISTORY_BINDKEY='^H'
 export ZSH_FOLDER_HISTORY_COMMAND_BINDKEY='^K'
 export ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=1
 export ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY='ctrl-k'
 ```
+
+### Environment variables
+
+- `ZSH_FOLDER_HISTORY_FILE`: path for persisted directory history
+- `ZSH_FOLDER_HISTORY_COMMANDS_FILE`: path for persisted command history
+- `ZSH_FOLDER_HISTORY_MAX_DIRS`: max persisted directories
+- `ZSH_FOLDER_HISTORY_MAX_COMMANDS`: base max command-history size
+- `ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR`: max persisted commands per directory
+- `ZSH_FOLDER_HISTORY_AUTO_BIND`: enable/disable default widget binding on load
+- `ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER`: enable/disable automatic folder-widget binding
+- `ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND`: enable/disable automatic command-widget binding
+- `ZSH_FOLDER_HISTORY_BINDKEY`: key for folder picker binding
+- `ZSH_FOLDER_HISTORY_COMMAND_BINDKEY`: key for command picker binding
+- `ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK`: enable/disable command search from inside folder picker
+- `ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY`: key used inside folder picker to open command search
+- `ZSH_FOLDER_HISTORY_ENABLE_ALIASES`: enable/disable aliases like `folder-history`
 
 Defaults:
 
@@ -180,7 +207,7 @@ Defaults:
 - `ZSH_FOLDER_HISTORY_MAX_DIRS`: `500`
 - `ZSH_FOLDER_HISTORY_MAX_COMMANDS`: `1000`
 - `ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR`: `1000`
-- `ZSH_FOLDER_HISTORY_AUTO_BIND`: `0`
+- `ZSH_FOLDER_HISTORY_AUTO_BIND`: `1`
 - `ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER`: `1`
 - `ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND`: `1`
 - `ZSH_FOLDER_HISTORY_ENABLE_ALIASES`: `0`
