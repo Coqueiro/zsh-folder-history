@@ -6,10 +6,15 @@ fi
 typeset -g __zsh_folder_history_loaded=1
 
 autoload -U add-zsh-hook
+zmodload zsh/datetime 2>/dev/null || true
 
 : ${ZSH_FOLDER_HISTORY_FILE:=${XDG_STATE_HOME:-$HOME/.local/state}/zsh-folder-history/directories}
 : ${ZSH_FOLDER_HISTORY_MAX_DIRS:=500}
-: ${ZSH_FOLDER_HISTORY_MAX_COMMANDS:=50}
+: ${ZSH_FOLDER_HISTORY_MAX_COMMANDS:=1000}
+: ${ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR:=$ZSH_FOLDER_HISTORY_MAX_COMMANDS}
+: ${ZSH_FOLDER_HISTORY_COMMANDS_FILE:=${ZSH_FOLDER_HISTORY_FILE:h}/commands.tsv}
+: ${ZSH_FOLDER_HISTORY_BINDKEY:=^H}
+: ${ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY:=ctrl-y}
 : ${ZSH_FOLDER_HISTORY_ENABLE_ALIASES:=0}
 
 typeset -ga _zfh_dirs=()
@@ -17,8 +22,11 @@ typeset -gA _zfh_commands=()
 typeset -gi _zfh_internal_cd=0
 typeset -gi _zfh_widget_registered=0
 typeset -gi _zfh_lock_fd=-1
+typeset -gi _zfh_widget_active=0
+typeset -gi _zfh_record_seq=0
 typeset -g _zfh_lock_backend=''
 typeset -g _zfh_lock_dir=''
+typeset -g _zfh_last_selected_command=''
 
 _zfh_dedupe_limit() {
   emulate -L zsh
@@ -49,6 +57,56 @@ _zfh_join_lines() {
   print -r -- "$*"
 }
 
+_zfh_history_limit() {
+  emulate -L zsh
+
+  local -i limit=$1
+  shift
+
+  local item
+  local -A seen=()
+  local -a ordered=("$@")
+  local -a result=()
+
+  ordered=("${(On)ordered}")
+
+  for item in "${ordered[@]}"; do
+    [[ -n $item ]] || continue
+    [[ -n ${seen[$item]-} ]] && continue
+    seen[$item]=1
+    result+=("$item")
+    if (( limit > 0 && ${#result[@]} >= limit )); then
+      break
+    fi
+  done
+
+  print -rl -- "${result[@]}"
+}
+
+_zfh_trim_command_records() {
+  emulate -L zsh
+
+  local -i limit=$1
+  shift
+
+  local record
+  local -A seen=()
+  local -a sorted=("${(On)@}")
+  local -a result=()
+
+  for record in "${sorted[@]}"; do
+    [[ -n $record ]] || continue
+    [[ -n ${seen[$record]-} ]] && continue
+    seen[$record]=1
+    result+=("$record")
+    if (( limit > 0 && ${#result[@]} >= limit )); then
+      break
+    fi
+  done
+
+  print -rl -- "${result[@]}"
+}
+
 _zfh_filter_existing_dirs() {
   emulate -L zsh
 
@@ -73,6 +131,78 @@ _zfh_normalize_command() {
   print -r -- "$command_text"
 }
 
+_zfh_now_epoch() {
+  emulate -L zsh
+
+  if [[ -n ${EPOCHSECONDS-} ]]; then
+    print -r -- "$EPOCHSECONDS"
+    return 0
+  fi
+
+  command date +%s
+}
+
+_zfh_now_sortkey() {
+  emulate -L zsh
+
+  local epoch realtime seconds microseconds
+  local -i seconds_num microseconds_num pid_num seq_num
+
+  epoch="$(_zfh_now_epoch)"
+  realtime=${EPOCHREALTIME-}
+  (( _zfh_record_seq++ ))
+
+  if [[ -n $realtime && $realtime == *.* ]]; then
+    seconds=${realtime%%.*}
+    microseconds=${realtime#*.}
+    microseconds=${microseconds[1,6]}
+    microseconds=${(r:6::0:)microseconds}
+  else
+    seconds=$epoch
+    microseconds=000000
+  fi
+
+  seconds_num=$((10#$seconds))
+  microseconds_num=$((10#$microseconds))
+  pid_num=$((10#$$))
+  seq_num=$((10#$_zfh_record_seq))
+
+  command printf '%010d%06d%06d%06d\n' "$seconds_num" "$microseconds_num" "$pid_num" "$seq_num"
+}
+
+_zfh_format_timestamp() {
+  emulate -L zsh
+
+  local epoch=$1
+  local formatted=''
+
+  if whence -w strftime >/dev/null 2>&1; then
+    strftime -s formatted '%Y-%m-%d %H:%M:%S' "$epoch"
+    print -r -- "$formatted"
+    return 0
+  fi
+
+  if formatted=$(command date -r "$epoch" '+%Y-%m-%d %H:%M:%S' 2>/dev/null); then
+    print -r -- "$formatted"
+    return 0
+  fi
+
+  if formatted=$(command date -d "@$epoch" '+%Y-%m-%d %H:%M:%S' 2>/dev/null); then
+    print -r -- "$formatted"
+    return 0
+  fi
+
+  print -r -- "$epoch"
+}
+
+_zfh_ensure_file() {
+  emulate -L zsh
+
+  local target_file=$1
+  command mkdir -p -- "${target_file:h}" || return 1
+  [[ -f $target_file ]] || : >| "$target_file"
+}
+
 _zfh_is_ignored_command() {
   emulate -L zsh
 
@@ -90,8 +220,8 @@ _zfh_is_ignored_command() {
 _zfh_ensure_state_file() {
   emulate -L zsh
 
-  command mkdir -p -- "${ZSH_FOLDER_HISTORY_FILE:h}" || return 1
-  [[ -f $ZSH_FOLDER_HISTORY_FILE ]] || : >| "$ZSH_FOLDER_HISTORY_FILE"
+  _zfh_ensure_file "$ZSH_FOLDER_HISTORY_FILE"
+  _zfh_ensure_file "$ZSH_FOLDER_HISTORY_COMMANDS_FILE"
 }
 
 _zfh_read_state_dirs() {
@@ -111,6 +241,78 @@ _zfh_read_state_dirs() {
 _zfh_lock_file() {
   emulate -L zsh
   print -r -- "${ZSH_FOLDER_HISTORY_FILE}.lockfile"
+}
+
+_zfh_commands_lock_file() {
+  emulate -L zsh
+  print -r -- "${ZSH_FOLDER_HISTORY_COMMANDS_FILE}.lockfile"
+}
+
+_zfh_fzf_preview_command() {
+  emulate -L zsh
+  print -r -- "sh -c '[ -f \"\$1\" ] && cat -- \"\$1\"' sh {2}"
+}
+
+_zfh_make_command_record() {
+  emulate -L zsh
+
+  local sortkey=$1
+  local epoch=$2
+  local command_text=$3
+  command printf '%s\t%s\t%s\n' "$sortkey" "$epoch" "$command_text"
+}
+
+_zfh_command_record_sortkey() {
+  emulate -L zsh
+
+  local record=$1
+  print -r -- "${record%%$'\t'*}"
+}
+
+_zfh_command_record_epoch() {
+  emulate -L zsh
+
+  local record=$1
+  local rest="${record#*$'\t'}"
+  local epoch="${rest%%$'\t'*}"
+  print -r -- "$epoch"
+}
+
+_zfh_command_record_text() {
+  emulate -L zsh
+
+  local record=$1
+  local rest="${record#*$'\t'}"
+  print -r -- "${rest#*$'\t'}"
+}
+
+_zfh_format_command_record() {
+  emulate -L zsh
+
+  local record=$1
+  local epoch command_text
+
+  epoch="$(_zfh_command_record_epoch "$record")"
+  command_text="$(_zfh_command_record_text "$record")"
+  print -r -- "[$(_zfh_format_timestamp "$epoch")] $command_text"
+}
+
+_zfh_write_command_preview() {
+  emulate -L zsh
+
+  local dir="${1:A}"
+  local record=$2
+  local epoch command_text
+
+  epoch="$(_zfh_command_record_epoch "$record")"
+  command_text="$(_zfh_command_record_text "$record")"
+
+  cat <<EOF
+Directory: $dir
+Timestamp: $(_zfh_format_timestamp "$epoch")
+
+$command_text
+EOF
 }
 
 _zfh_refresh_dirs() {
@@ -190,6 +392,99 @@ _zfh_load_dirs() {
   _zfh_dirs=("${(@f)$(_zfh_read_state_dirs)}")
 }
 
+_zfh_add_command_record() {
+  emulate -L zsh
+
+  local dir="${1:A}"
+  local record=$2
+  local existing
+  local -a merged=()
+
+  [[ -n $dir ]] || return 0
+  [[ -n $record ]] || return 0
+
+  existing="${_zfh_commands[$dir]-}"
+  merged=("$record" "${(@f)existing}")
+  merged=("${(@f)$(_zfh_trim_command_records "$ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR" "${merged[@]}")}")
+  _zfh_commands[$dir]="$(_zfh_join_lines "${merged[@]}")"
+}
+
+_zfh_load_commands() {
+  emulate -L zsh
+
+  local dir sortkey epoch command_text record current
+
+  _zfh_ensure_state_file || return 1
+  [[ -r $ZSH_FOLDER_HISTORY_COMMANDS_FILE ]] || return 0
+
+  _zfh_commands=()
+
+  while IFS=$'\t' read -r dir sortkey epoch command_text; do
+    [[ -n $dir && -n $sortkey && -n $epoch && -n $command_text ]] || continue
+    record="${sortkey}"$'\t'"${epoch}"$'\t'"${command_text}"
+    current="${_zfh_commands[$dir]-}"
+    if [[ -n $current ]]; then
+      _zfh_commands[$dir]+=$'\n'"$record"
+    else
+      _zfh_commands[$dir]="$record"
+    fi
+  done < "$ZSH_FOLDER_HISTORY_COMMANDS_FILE"
+
+  for dir in "${(@ok)_zfh_commands}"; do
+    _zfh_commands[$dir]="$(_zfh_join_lines "${(@f)$(_zfh_trim_command_records "$ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR" "${(@f)_zfh_commands[$dir]}")}")"
+  done
+}
+
+_zfh_refresh_commands() {
+  emulate -L zsh
+  _zfh_load_commands
+}
+
+_zfh_save_commands() {
+  emulate -L zsh
+
+  local lock_file temp_file exit_code dir existing record
+  local -A memory_commands=()
+  local -a merged=()
+
+  _zfh_ensure_state_file || return 1
+  memory_commands=("${(@kv)_zfh_commands}")
+  lock_file="$(_zfh_commands_lock_file)"
+  _zfh_acquire_lock "$lock_file" || return 1
+  _zfh_load_commands
+
+  for dir in "${(@ok)memory_commands}"; do
+    merged=("${(@f)memory_commands[$dir]}" "${(@f)_zfh_commands[$dir]}")
+    merged=("${(@f)$(_zfh_trim_command_records "$ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR" "${merged[@]}")}")
+    _zfh_commands[$dir]="$(_zfh_join_lines "${merged[@]}")"
+  done
+
+  temp_file=$(command mktemp "${ZSH_FOLDER_HISTORY_COMMANDS_FILE}.tmp.XXXXXX") || {
+    _zfh_release_lock
+    return 1
+  }
+
+  {
+    for dir in "${(@ok)_zfh_commands}"; do
+      existing="${_zfh_commands[$dir]-}"
+      [[ -n $existing ]] || continue
+      for record in "${(@f)existing}"; do
+        print -r -- "$dir"$'\t'"$record"
+      done
+    done
+  } >| "$temp_file"
+  exit_code=$?
+
+  if (( exit_code == 0 )); then
+    command mv -f -- "$temp_file" "$ZSH_FOLDER_HISTORY_COMMANDS_FILE"
+    exit_code=$?
+  fi
+
+  [[ -f $temp_file ]] && command rm -f -- "$temp_file"
+  _zfh_release_lock
+  return $exit_code
+}
+
 _zfh_save_dirs() {
   emulate -L zsh
 
@@ -241,17 +536,19 @@ _zfh_record_command() {
 
   local dir="${1:A}"
   local command_text="$2"
-  local existing
-  local -a merged=()
+  local sortkey epoch record
 
   [[ -d $dir ]] || return 0
   command_text="$(_zfh_normalize_command "$command_text")"
   [[ -n ${command_text//[[:space:]]/} ]] || return 0
   _zfh_is_ignored_command "$command_text" && return 0
 
-  existing="${_zfh_commands[$dir]-}"
-  merged=("${(@f)$(_zfh_dedupe_limit "$ZSH_FOLDER_HISTORY_MAX_COMMANDS" "$command_text" "${(@f)existing}")}")
-  _zfh_commands[$dir]="$(_zfh_join_lines "${merged[@]}")"
+  sortkey="$(_zfh_now_sortkey)"
+  epoch="$(_zfh_now_epoch)"
+  record="$(_zfh_make_command_record "$sortkey" "$epoch" "$command_text")"
+  record="${record%$'\n'}"
+  _zfh_add_command_record "$dir" "$record"
+  _zfh_save_commands
 }
 
 _zfh_print_commands_for_dir() {
@@ -259,13 +556,16 @@ _zfh_print_commands_for_dir() {
 
   local dir="${1:A}"
   local commands="${_zfh_commands[$dir]-}"
+  local record
 
   if [[ -z $commands ]]; then
-    print -r -- 'No commands recorded for this directory in the current shell session.'
+    print -r -- 'No commands recorded for this directory.'
     return 0
   fi
 
-  print -rl -- "${(@f)commands}"
+  for record in "${(@f)commands}"; do
+    _zfh_format_command_record "$record"
+  done
 }
 
 _zfh_build_picker_input() {
@@ -280,6 +580,25 @@ _zfh_build_picker_input() {
     preview_file="$temp_dir/$index"
     _zfh_print_commands_for_dir "$dir" >| "$preview_file"
     printf '%s\t%s\n' "$dir" "$preview_file"
+  done
+}
+
+_zfh_build_command_picker_input() {
+  emulate -L zsh
+
+  local dir="${1:A}"
+  local temp_dir=$2
+  local commands="${_zfh_commands[$dir]-}"
+  local record preview_file display command_text
+  local -i index=0
+
+  for record in "${(@f)commands}"; do
+    (( index++ ))
+    preview_file="$temp_dir/$index"
+    _zfh_write_command_preview "$dir" "$record" >| "$preview_file"
+    display="$(_zfh_format_command_record "$record")"
+    command_text="$(_zfh_command_record_text "$record")"
+    printf '%s\t%s\t%s\n' "$display" "$preview_file" "$command_text"
   done
 }
 
@@ -304,7 +623,7 @@ zfh_pick() {
   setopt localoptions pipefail no_aliases
 
   local query="$*"
-  local temp_dir selection selected_dir
+  local temp_dir output key selection selected_dir selected_command
   local exit_code
 
   command -v fzf >/dev/null 2>&1 || {
@@ -312,22 +631,53 @@ zfh_pick() {
     return 1
   }
 
+  _zfh_last_selected_command=''
   _zfh_add_dir "$PWD"
   _zfh_refresh_dirs
+  _zfh_refresh_commands
   temp_dir=$(command mktemp -d "${TMPDIR:-/tmp}/zsh-folder-history.XXXXXX") || return 1
 
-  selection="$(_zfh_build_picker_input "$temp_dir" | fzf \
-    --delimiter=$'\t' \
-    --with-nth=1 \
-    --prompt='folder-history> ' \
-    --preview='[[ -f {2} ]] && cat {2}' \
-    --preview-window='right,60%,wrap' \
-    --query "$query")"
-  exit_code=$?
+  while true; do
+    output="$(_zfh_build_picker_input "$temp_dir" | fzf \
+      --delimiter=$'\t' \
+      --with-nth=1 \
+      --expect="$ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY" \
+      --prompt='folder-history> ' \
+      --header="$ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY: browse commands for highlighted folder" \
+      --preview="$(_zfh_fzf_preview_command)" \
+      --preview-window='right,60%,wrap' \
+      --query "$query")"
+    exit_code=$?
+
+    (( exit_code == 0 )) || {
+      command rm -rf -- "$temp_dir"
+      return $exit_code
+    }
+
+    key="${output%%$'\n'*}"
+    selection="${output#*$'\n'}"
+    selected_dir="${selection%%$'\t'*}"
+
+    if [[ "$key" == "$ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY" ]]; then
+      [[ -n $selected_dir ]] || continue
+      selected_command="$(zfh_command_pick "$selected_dir")"
+      exit_code=$?
+      (( exit_code == 0 )) || {
+        command rm -rf -- "$temp_dir"
+        return $exit_code
+      }
+      _zfh_last_selected_command="$selected_command"
+      command rm -rf -- "$temp_dir"
+      if (( !_zfh_widget_active )) && [[ -n $selected_command ]]; then
+        print -r -- "$selected_command"
+      fi
+      return 0
+    fi
+
+    break
+  done
 
   command rm -rf -- "$temp_dir"
-
-  (( exit_code == 0 )) || return $exit_code
 
   selected_dir="${selection%%$'\t'*}"
   [[ -n $selected_dir ]] || return 0
@@ -342,6 +692,49 @@ zfh_pick() {
   fi
 
   return $exit_code
+}
+
+zfh_command_pick() {
+  emulate -L zsh
+  setopt localoptions pipefail no_aliases
+
+  local dir="${1:-$PWD}"
+  shift
+  local query="$*"
+  local temp_dir selection selected_command commands
+  local exit_code
+
+  command -v fzf >/dev/null 2>&1 || {
+    print -u2 -- 'zfh: fzf is required'
+    return 1
+  }
+
+  dir="${dir:A}"
+  _zfh_refresh_commands
+  commands="${_zfh_commands[$dir]-}"
+
+  if [[ -z $commands ]]; then
+    print -u2 -- "zfh: no commands recorded for $dir"
+    return 1
+  fi
+
+  temp_dir=$(command mktemp -d "${TMPDIR:-/tmp}/zsh-folder-history-commands.XXXXXX") || return 1
+  selection="$(_zfh_build_command_picker_input "$dir" "$temp_dir" | fzf \
+    --delimiter=$'\t' \
+    --with-nth=1 \
+    --prompt='command-history> ' \
+    --header='enter: print selected command | preview: full command' \
+    --preview="$(_zfh_fzf_preview_command)" \
+    --preview-window='right,60%,wrap' \
+    --query "$query")"
+  exit_code=$?
+
+  command rm -rf -- "$temp_dir"
+  (( exit_code == 0 )) || return $exit_code
+
+  selected_command="${selection##*$'\t'}"
+  _zfh_last_selected_command="$selected_command"
+  print -r -- "$selected_command"
 }
 
 _zfh_register_widget() {
@@ -368,11 +761,19 @@ zfh_widget() {
   CURSOR=0
   zle -I
 
+  _zfh_widget_active=1
   zfh_pick
   exit_code=$?
+  _zfh_widget_active=0
 
-  BUFFER=$original_buffer
-  CURSOR=$original_cursor
+  if [[ -n $_zfh_last_selected_command ]]; then
+    BUFFER=$_zfh_last_selected_command
+    CURSOR=${#BUFFER}
+  else
+    BUFFER=$original_buffer
+    CURSOR=$original_cursor
+  fi
+
   zle reset-prompt
   return $exit_code
 }
@@ -380,7 +781,7 @@ zfh_widget() {
 zfh_bindkey() {
   emulate -L zsh
 
-  local key="${1:-^H}"
+  local key="${1:-$ZSH_FOLDER_HISTORY_BINDKEY}"
   _zfh_register_widget || return 1
   bindkey "$key" zfh_widget
 }
@@ -394,11 +795,14 @@ Usage:
   zfh pick [query]
   zfh list
   zfh commands [dir]
+  zfh command-pick [dir] [query]
   zfh bindkey [key]
   zfh help
 
 Notes:
-  - Commands are shown as recent unique commands for the current shell session.
+  - Commands are timestamped and persisted across shell sessions.
+  - Per-folder command history limit defaults to 1000 entries.
+  - Folder picker header advertises the key that opens command search.
   - Source this plugin from your shell config; it cannot cd when executed as a script.
 EOF
 }
@@ -419,11 +823,16 @@ zfh() {
       ;;
     (commands)
       shift
+      _zfh_refresh_commands
       _zfh_print_commands_for_dir "${1:-$PWD}"
+      ;;
+    (command-pick)
+      shift
+      zfh_command_pick "$@"
       ;;
     (bindkey)
       shift
-      zfh_bindkey "${1:-^H}"
+      zfh_bindkey "${1:-$ZSH_FOLDER_HISTORY_BINDKEY}"
       ;;
     (help|-h|--help)
       zfh_help
