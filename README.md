@@ -16,7 +16,6 @@ Standalone zsh folder picker with `fzf` previews of commands used in each folder
 - Persists timestamped commands per directory across shell sessions.
 - Commands keep the most recent entries only for the directory being requested.
 - Command writes are append-only during command execution.
-- Existing `~/.dirhistory/.dirhistory` folder history is imported into zfh on first load when zfh has no persisted directory history yet.
 - Opens an `fzf` picker and `cd`s into the selected directory.
 - Shows session commands for the highlighted directory in the preview pane.
 - Lets you open a second `fzf` picker to search commands inside the highlighted directory.
@@ -146,7 +145,6 @@ zfh bind-command-key '^K'
 - `zfh list`: print tracked directories
 - `zfh commands [dir]`: print persisted timestamped commands for a directory
 - `zfh command-pick [dir] [query]`: search commands for one directory and print the selected command
-- `zfh import-dirhistory`: import legacy `~/.dirhistory/.dirhistory` into zfh and compact folder history
 - `zfh bindkey [key]`: register the zle widget and bind a key (default: `^H`)
 - `zfh bind-command-key [key]`: register the command picker widget and bind a key (default: `^K`)
 - `zfh help`: print help

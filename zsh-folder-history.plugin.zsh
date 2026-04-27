@@ -522,40 +522,6 @@ _zfh_compact_dirs() {
   return $exit_code
 }
 
-_zfh_legacy_dirhistory_dirs() {
-  emulate -L zsh
-
-  local legacy_file="${HOME}/.dirhistory/.dirhistory"
-  local dir
-  local -a imported=()
-
-  [[ -r $legacy_file ]] || return 0
-
-  for dir in "${(@f)$(<"$legacy_file")}"; do
-    [[ -d $dir ]] || continue
-    imported+=("${dir:A}")
-  done
-
-  _zfh_dedupe_limit "$ZSH_FOLDER_HISTORY_MAX_DIRS" "${imported[@]}"
-}
-
-_zfh_import_legacy_dirhistory() {
-  emulate -L zsh
-
-  local legacy_file="${HOME}/.dirhistory/.dirhistory"
-  local -a imported=()
-
-  [[ -r $legacy_file ]] || return 0
-  (( ${#_zfh_dirs[@]} == 0 )) || return 0
-
-  imported=("${(@f)$(_zfh_legacy_dirhistory_dirs)}")
-
-  (( ${#imported[@]} == 0 )) && return 0
-  _zfh_dirs=("${(@f)$(_zfh_dedupe_limit "$ZSH_FOLDER_HISTORY_MAX_DIRS" "${imported[@]}")}")
-  _zfh_compact_dirs
-  _zfh_load_dirs
-}
-
 _zfh_add_dir() {
   emulate -L zsh
 
@@ -878,19 +844,6 @@ zfh_bind_command_key() {
   bindkey "$key" zfh_command_widget
 }
 
-zfh_import_dirhistory() {
-  emulate -L zsh
-
-  local -a imported=()
-
-  imported=("${(@f)$(_zfh_legacy_dirhistory_dirs)}")
-  (( ${#imported[@]} == 0 )) && return 0
-
-  _zfh_dirs=("${(@f)$(_zfh_dedupe_limit "$ZSH_FOLDER_HISTORY_MAX_DIRS" "${_zfh_dirs[@]}" "${imported[@]}")}")
-  _zfh_compact_dirs
-  _zfh_load_dirs
-}
-
 zfh_help() {
   cat <<'EOF'
 zfh - zsh folder history picker
@@ -901,7 +854,6 @@ Usage:
   zfh list
   zfh commands [dir]
   zfh command-pick [dir] [query]
-  zfh import-dirhistory
   zfh bindkey [key]
   zfh bind-command-key [key]
   zfh help
@@ -959,9 +911,6 @@ zfh() {
       shift
       zfh_command_pick "$@"
       ;;
-    (import-dirhistory)
-      zfh_import_dirhistory
-      ;;
     (bindkey)
       shift
       zfh_bindkey "${1:-$ZSH_FOLDER_HISTORY_BINDKEY}"
@@ -997,7 +946,6 @@ fi
 
 if [[ -o interactive ]]; then
   _zfh_load_dirs
-  _zfh_import_legacy_dirhistory
   _zfh_add_dir "$PWD"
   add-zsh-hook preexec _zfh_preexec
   add-zsh-hook chpwd _zfh_chpwd

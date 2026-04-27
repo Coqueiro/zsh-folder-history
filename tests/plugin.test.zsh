@@ -90,16 +90,3 @@ EOF
 [[ "$trimmed_output" == *'echo third'* ]] || fail 'trimmed output should include newest command'
 [[ "$trimmed_output" == *'echo world'* ]] || fail 'trimmed output should include second newest command'
 [[ "$trimmed_output" != *'echo hello'* ]] || fail 'trimmed output should drop oldest command beyond per-dir cap'
-
-mkdir -p "$HOME/.dirhistory"
-print -r -- "$REPO_DIR" >| "$HOME/.dirhistory/.dirhistory"
-
-legacy_dir_output=$(HOME="$HOME" XDG_STATE_HOME="$XDG_STATE_HOME" zsh -fi <<'EOF'
-zfh import-dirhistory >/dev/null
-zfh list
-EOF
-)
-assert_contains "$legacy_dir_output" "$REPO_DIR" 'legacy dirhistory should be imported into zfh directories'
-
-line_count_after_import=$(wc -l < "$ZSH_FOLDER_HISTORY_FILE" | tr -d ' ')
-[[ "$line_count_after_import" -ge 1 ]] || fail 'folder history file should contain imported directories'
