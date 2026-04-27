@@ -12,7 +12,7 @@ Standalone zsh folder picker with `fzf` previews of commands used in each folder
 ## Current behavior
 
 - Tracks visited directories with native zsh hooks.
-- Persists directory history across shell sessions.
+- Persists a compacted directory history across shell sessions.
 - Persists timestamped commands per directory across shell sessions.
 - Commands keep the most recent entries only for the directory being requested.
 - Command writes are append-only during command execution.
@@ -174,7 +174,7 @@ Set variables before sourcing the plugin:
 export ZSH_FOLDER_HISTORY_FILE="$HOME/.local/state/zsh-folder-history/directories"
 export ZSH_FOLDER_HISTORY_COMMANDS_FILE="$HOME/.local/state/zsh-folder-history/commands.tsv"
 export ZSH_FOLDER_HISTORY_MAX_DIRS=500
-export ZSH_FOLDER_HISTORY_MAX_COMMANDS=1000
+export ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR=1000
 export ZSH_FOLDER_HISTORY_ENABLE_ALIASES=1
 export ZSH_FOLDER_HISTORY_AUTO_BIND=1
 export ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER=1

@@ -32,6 +32,7 @@ typeset -gi _zfh_record_seq=0
 typeset -g _zfh_lock_backend=''
 typeset -g _zfh_lock_dir=''
 typeset -g _zfh_last_selected_command=''
+typeset -g _zfh_last_selected_dir=''
 
 _zfh_dedupe_limit() {
   emulate -L zsh
@@ -44,38 +45,6 @@ _zfh_dedupe_limit() {
   local -a result=()
 
   for item in "$@"; do
-    [[ -n $item ]] || continue
-    [[ -n ${seen[$item]-} ]] && continue
-    seen[$item]=1
-    result+=("$item")
-    if (( limit > 0 && ${#result[@]} >= limit )); then
-      break
-    fi
-  done
-
-  print -rl -- "${result[@]}"
-}
-
-_zfh_join_lines() {
-  emulate -L zsh
-  local IFS=$'\n'
-  print -r -- "$*"
-}
-
-_zfh_history_limit() {
-  emulate -L zsh
-
-  local -i limit=$1
-  shift
-
-  local item
-  local -A seen=()
-  local -a ordered=("$@")
-  local -a result=()
-
-  ordered=("${(On)ordered}")
-
-  for item in "${ordered[@]}"; do
     [[ -n $item ]] || continue
     [[ -n ${seen[$item]-} ]] && continue
     seen[$item]=1
@@ -132,7 +101,7 @@ _zfh_normalize_command() {
   local command_text=$1
   command_text=${command_text//$'\r'/ }
   command_text=${command_text//$'\n'/ ' ↩ '}
-  command_text=${command_text//$'\t'/ ' '}
+  command_text=${command_text//$'\t'/ }
   print -r -- "$command_text"
 }
 
@@ -345,9 +314,14 @@ _zfh_trim_commands_for_dir() {
   return $exit_code
 }
 
-_zfh_fzf_preview_command() {
+_zfh_fzf_dir_preview_command() {
   emulate -L zsh
-  print -r -- "sh -c '[ -f \"\$1\" ] && cat -- \"\$1\"' sh {2}"
+  print -r -- "zsh -fc 'source \"\$1\"; shift; _zfh_print_commands_for_dir \"\$1\" 0' zsh ${_zfh_plugin_file:q} {}"
+}
+
+_zfh_fzf_command_preview_command() {
+  emulate -L zsh
+  print -r -- "zsh -fc 'source \"\$1\"; shift; _zfh_write_command_preview_fields \"\$1\" \"\$2\" \"\$3\"' zsh ${_zfh_plugin_file:q} {2} {3} {4}"
 }
 
 _zfh_make_command_record() {
@@ -403,6 +377,16 @@ _zfh_write_command_preview() {
 
   epoch="$(_zfh_command_record_epoch "$record")"
   command_text="$(_zfh_command_record_text "$record")"
+
+  _zfh_write_command_preview_fields "$dir" "$epoch" "$command_text"
+}
+
+_zfh_write_command_preview_fields() {
+  emulate -L zsh
+
+  local dir="${1:A}"
+  local epoch=$2
+  local command_text=$3
 
   cat <<EOF
 Directory: $dir
@@ -555,10 +539,11 @@ _zfh_print_commands_for_dir() {
   emulate -L zsh
 
   local dir="${1:A}"
+  local -i persist_trim=${2:-1}
   local commands
   local record
 
-  _zfh_trim_commands_for_dir "$dir"
+  (( persist_trim )) && _zfh_trim_commands_for_dir "$dir"
   commands="$(_zfh_records_for_dir "$dir")"
 
   if [[ -z $commands ]]; then
@@ -574,44 +559,28 @@ _zfh_print_commands_for_dir() {
 _zfh_build_picker_input() {
   emulate -L zsh
 
-  local temp_dir=$1
-  local dir preview_file
-  local -i index=0
-
-  for dir in "${_zfh_dirs[@]}"; do
-    (( index++ ))
-    preview_file="$temp_dir/$index"
-    _zfh_print_commands_for_dir "$dir" >| "$preview_file"
-    printf '%s\t%s\n' "$dir" "$preview_file"
-  done
+  print -rl -- "${_zfh_dirs[@]}"
 }
 
 _zfh_build_command_picker_input() {
   emulate -L zsh
 
   local dir="${1:A}"
-  local temp_dir=$2
-  local commands
-  local record preview_file display command_text
-  local -i index=0
-
-  _zfh_trim_commands_for_dir "$dir"
-  commands="$(_zfh_records_for_dir "$dir")"
+  local commands=$2
+  local record display command_text epoch
 
   for record in "${(@f)commands}"; do
-    (( index++ ))
-    preview_file="$temp_dir/$index"
-    _zfh_write_command_preview "$dir" "$record" >| "$preview_file"
     display="$(_zfh_format_command_record "$record")"
-    command_text="$(_zfh_command_record_text "$record")"
-    printf '%s\t%s\t%s\n' "$display" "$preview_file" "$command_text"
+    epoch="$(_zfh_command_record_epoch "$record")"
+    command_text="$(_zfh_normalize_command "$(_zfh_command_record_text "$record")")"
+    printf '%s\t%s\t%s\t%s\n' "$display" "$dir" "$epoch" "$command_text"
   done
 }
 
 _zfh_preexec() {
   emulate -L zsh
 
-  local command_text="${1:-$3}"
+  local command_text="$1"
 
   (( _zfh_internal_cd )) && return 0
   _zfh_record_command "$PWD" "$command_text"
@@ -629,7 +598,7 @@ zfh_pick() {
   setopt localoptions pipefail no_aliases
 
   local query="$*"
-  local temp_dir output key selection selected_dir selected_command
+  local output key selection selected_dir selected_command
   local exit_code
   local -a fzf_args=()
 
@@ -639,15 +608,13 @@ zfh_pick() {
   }
 
   _zfh_last_selected_command=''
+  _zfh_last_selected_dir=''
   _zfh_add_dir "$PWD"
   _zfh_refresh_dirs
-  temp_dir=$(command mktemp -d "${TMPDIR:-/tmp}/zsh-folder-history.XXXXXX") || return 1
 
   fzf_args=(
-    --delimiter=$'\t'
-    --with-nth=1
     --prompt='folder-history> '
-    --preview="$(_zfh_fzf_preview_command)"
+    --preview="$(_zfh_fzf_dir_preview_command)"
     --preview-window='right,60%,wrap,nohidden'
     --query "$query"
   )
@@ -657,34 +624,31 @@ zfh_pick() {
   fi
 
   while true; do
-    output="$(_zfh_build_picker_input "$temp_dir" | fzf "${fzf_args[@]}")"
+    output="$(_zfh_build_picker_input | fzf "${fzf_args[@]}")"
     exit_code=$?
 
-    (( exit_code == 0 )) || {
-      command rm -rf -- "$temp_dir"
-      return $exit_code
-    }
+    (( exit_code == 0 )) || return $exit_code
 
     if (( ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK )); then
       key="${output%%$'\n'*}"
-      selection="${output#*$'\n'}"
+      if [[ "$output" == *$'\n'* ]]; then
+        selection="${output#*$'\n'}"
+      else
+        selection=''
+      fi
     else
       key=''
       selection="$output"
     fi
 
-    selected_dir="${selection%%$'\t'*}"
+    selected_dir="$selection"
 
     if (( ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK )) && [[ "$key" == "$ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY" ]]; then
       [[ -n $selected_dir ]] || continue
       selected_command="$(zfh_command_pick "$selected_dir")"
       exit_code=$?
-      (( exit_code == 0 )) || {
-        command rm -rf -- "$temp_dir"
-        return $exit_code
-      }
+      (( exit_code == 0 )) || return $exit_code
       _zfh_last_selected_command="$selected_command"
-      command rm -rf -- "$temp_dir"
       if (( !_zfh_widget_active )) && [[ -n $selected_command ]]; then
         print -r -- "$selected_command"
       fi
@@ -694,9 +658,6 @@ zfh_pick() {
     break
   done
 
-  command rm -rf -- "$temp_dir"
-
-  selected_dir="${selection%%$'\t'*}"
   [[ -n $selected_dir ]] || return 0
 
   _zfh_internal_cd=1
@@ -706,6 +667,7 @@ zfh_pick() {
 
   if (( exit_code == 0 )); then
     _zfh_add_dir "$PWD"
+    _zfh_last_selected_dir="$PWD"
   fi
 
   return $exit_code
@@ -718,7 +680,7 @@ zfh_command_pick() {
   local dir="${1:-$PWD}"
   shift
   local query="$*"
-  local temp_dir selection selected_command commands
+  local selection selected_command commands
   local exit_code
 
   command -v fzf >/dev/null 2>&1 || {
@@ -726,6 +688,7 @@ zfh_command_pick() {
     return 1
   }
 
+  _zfh_last_selected_command=''
   dir="${dir:A}"
   _zfh_trim_commands_for_dir "$dir"
   commands="$(_zfh_records_for_dir "$dir")"
@@ -735,20 +698,20 @@ zfh_command_pick() {
     return 1
   fi
 
-  temp_dir=$(command mktemp -d "${TMPDIR:-/tmp}/zsh-folder-history-commands.XXXXXX") || return 1
-  selection="$(_zfh_build_command_picker_input "$dir" "$temp_dir" | fzf \
+  selection="$(_zfh_build_command_picker_input "$dir" "$commands" | fzf \
     --delimiter=$'\t' \
     --with-nth=1 \
     --prompt='command-history> ' \
-    --preview="$(_zfh_fzf_preview_command)" \
+    --preview="$(_zfh_fzf_command_preview_command)" \
     --preview-window='right,60%,wrap,nohidden' \
     --query "$query")"
   exit_code=$?
 
-  command rm -rf -- "$temp_dir"
   (( exit_code == 0 )) || return $exit_code
 
-  selected_command="${selection##*$'\t'}"
+  selected_command="${selection#*$'\t'}"
+  selected_command="${selected_command#*$'\t'}"
+  selected_command="${selected_command#*$'\t'}"
   _zfh_last_selected_command="$selected_command"
   print -r -- "$selected_command"
 }
@@ -791,6 +754,11 @@ zfh_widget() {
   if [[ -n $_zfh_last_selected_command ]]; then
     BUFFER=$_zfh_last_selected_command
     CURSOR=${#BUFFER}
+  elif (( exit_code == 0 )) && [[ -n $_zfh_last_selected_dir && -z $original_buffer ]]; then
+    BUFFER=''
+    CURSOR=0
+    zle accept-line
+    return 0
   else
     BUFFER=$original_buffer
     CURSOR=$original_cursor

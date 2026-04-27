@@ -28,6 +28,14 @@ assert_contains() {
 TEST_DIR="$ZFH_TEST_ROOT/plugin"
 mkdir -p "$TEST_DIR/state" "$TEST_DIR/home"
 
+FAKE_BIN="$TEST_DIR/bin"
+mkdir -p "$FAKE_BIN"
+cat >| "$FAKE_BIN/fzf" <<'EOF'
+#!/bin/sh
+cat "$FAKE_FZF_OUTPUT_FILE"
+EOF
+chmod +x "$FAKE_BIN/fzf"
+
 export HOME="$TEST_DIR/home"
 export XDG_STATE_HOME="$TEST_DIR/state"
 export ZSH_FOLDER_HISTORY_FILE="$XDG_STATE_HOME/zfh/directories"
@@ -35,6 +43,7 @@ export ZSH_FOLDER_HISTORY_COMMANDS_FILE="$XDG_STATE_HOME/zfh/commands.tsv"
 export ZSH_FOLDER_HISTORY_AUTO_BIND=1
 export ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=1
 export ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR=2
+export PATH="$FAKE_BIN:$PATH"
 
 setopt interactivecomments
 _zfh_test_zdotdir="$TEST_DIR/zdotdir"
@@ -60,6 +69,39 @@ status=$?
 
 [[ -f $ZSH_FOLDER_HISTORY_FILE ]] || fail 'directory state file not created'
 [[ -f $ZSH_FOLDER_HISTORY_COMMANDS_FILE ]] || fail 'command state file not created'
+
+dir_line_count_before=$(wc -l < "$ZSH_FOLDER_HISTORY_FILE" | tr -d ' ')
+
+zsh -fi <<'EOF'
+_zfh_add_dir "$PWD"
+_zfh_add_dir "$PWD"
+zfh list >/dev/null
+EOF
+
+dir_line_count_after=$(wc -l < "$ZSH_FOLDER_HISTORY_FILE" | tr -d ' ')
+[[ "$dir_line_count_after" -ge 1 ]] || fail 'directory history file should keep entries after compaction'
+[[ "$dir_line_count_after" -le "$dir_line_count_before" ]] || fail 'directory history compaction should not grow the file'
+
+selected_dir="$TEST_DIR/selected dir"
+mkdir -p "$selected_dir"
+export FAKE_FZF_OUTPUT_FILE="$TEST_DIR/fzf-output"
+printf '\n%s\n' "$selected_dir" >| "$FAKE_FZF_OUTPUT_FILE"
+
+pick_state=$(zsh -fi <<'EOF'
+cd "$HOME"
+zfh_pick >/dev/null
+print -r -- "PWD=$PWD"
+print -r -- "DIR=$_zfh_last_selected_dir"
+EOF
+)
+
+assert_contains "$pick_state" "PWD=$selected_dir" 'zfh_pick should cd into selected directory'
+assert_contains "$pick_state" "DIR=$selected_dir" 'zfh_pick should record selected directory for widget flow'
+
+older_dir="$TEST_DIR/older"
+newer_dir="$TEST_DIR/newer"
+mkdir -p "$older_dir" "$newer_dir"
+printf '%s\n%s\n%s\n' "$older_dir" "$newer_dir" "$older_dir" >| "$ZSH_FOLDER_HISTORY_FILE"
 
 raw_file=$(<"$ZSH_FOLDER_HISTORY_COMMANDS_FILE")
 assert_contains "$raw_file" $'echo hello' 'commands file should contain first command'
