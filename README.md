@@ -15,7 +15,7 @@ Standalone zsh folder picker with `fzf` previews of commands used in each folder
 - Persists directory history across shell sessions.
 - Persists timestamped commands per directory across shell sessions.
 - Commands keep the most recent entries per directory.
-- Command writes are append-only during command execution; compaction happens on shell load.
+- Command writes are append-only during command execution; compaction happens when `zfh` commands run.
 - Opens an `fzf` picker and `cd`s into the selected directory.
 - Shows session commands for the highlighted directory in the preview pane.
 - Lets you open a second `fzf` picker to search commands inside the highlighted directory.
@@ -195,7 +195,7 @@ export ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY='ctrl-k'
 - `ZSH_FOLDER_HISTORY_AUTO_BIND`: enable/disable default widget binding on load
 - `ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER`: enable/disable automatic folder-widget binding
 - `ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND`: enable/disable automatic command-widget binding
-- `ZSH_FOLDER_HISTORY_COMPACT_ON_LOAD`: compact persisted command history when the plugin loads
+- `ZSH_FOLDER_HISTORY_COMPACT_ON_COMMAND`: compact persisted command history when `zfh` commands run
 - `ZSH_FOLDER_HISTORY_BINDKEY`: key for folder picker binding
 - `ZSH_FOLDER_HISTORY_COMMAND_BINDKEY`: key for command picker binding
 - `ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK`: enable/disable command search from inside folder picker
@@ -209,7 +209,7 @@ Defaults:
 - `ZSH_FOLDER_HISTORY_MAX_DIRS`: `500`
 - `ZSH_FOLDER_HISTORY_MAX_COMMANDS`: `1000`
 - `ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR`: `1000`
-- `ZSH_FOLDER_HISTORY_COMPACT_ON_LOAD`: `1`
+- `ZSH_FOLDER_HISTORY_COMPACT_ON_COMMAND`: `1`
 - `ZSH_FOLDER_HISTORY_AUTO_BIND`: `1`
 - `ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER`: `1`
 - `ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND`: `1`

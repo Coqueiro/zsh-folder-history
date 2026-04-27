@@ -34,7 +34,7 @@ export ZSH_FOLDER_HISTORY_FILE="$XDG_STATE_HOME/zfh/directories"
 export ZSH_FOLDER_HISTORY_COMMANDS_FILE="$XDG_STATE_HOME/zfh/commands.tsv"
 export ZSH_FOLDER_HISTORY_AUTO_BIND=1
 export ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=1
-export ZSH_FOLDER_HISTORY_COMPACT_ON_LOAD=1
+export ZSH_FOLDER_HISTORY_COMPACT_ON_COMMAND=1
 
 setopt interactivecomments
 _zfh_test_zdotdir="$TEST_DIR/zdotdir"
@@ -76,4 +76,4 @@ assert_contains "$reloaded_output" 'echo hello' 'reloaded commands should includ
 assert_contains "$reloaded_output" 'echo world' 'reloaded commands should include second command'
 
 line_count_after=$(wc -l < "$ZSH_FOLDER_HISTORY_COMMANDS_FILE" | tr -d ' ')
-[[ "$line_count_after" -le "$line_count_before" ]] || fail 'compaction on load should not grow commands file'
+[[ "$line_count_after" -le "$line_count_before" ]] || fail 'compaction on command should not grow commands file'

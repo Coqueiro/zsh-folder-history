@@ -13,7 +13,7 @@ zmodload zsh/datetime 2>/dev/null || true
 : ${ZSH_FOLDER_HISTORY_MAX_COMMANDS:=1000}
 : ${ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR:=$ZSH_FOLDER_HISTORY_MAX_COMMANDS}
 : ${ZSH_FOLDER_HISTORY_COMMANDS_FILE:=${ZSH_FOLDER_HISTORY_FILE:h}/commands.tsv}
-: ${ZSH_FOLDER_HISTORY_COMPACT_ON_LOAD:=1}
+: ${ZSH_FOLDER_HISTORY_COMPACT_ON_COMMAND:=1}
 : ${ZSH_FOLDER_HISTORY_AUTO_BIND:=1}
 : ${ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER:=1}
 : ${ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND:=1}
@@ -644,6 +644,7 @@ zfh_pick() {
     return 1
   }
 
+  (( ZSH_FOLDER_HISTORY_COMPACT_ON_COMMAND )) && _zfh_compact_commands
   _zfh_last_selected_command=''
   _zfh_add_dir "$PWD"
   _zfh_refresh_dirs
@@ -734,6 +735,7 @@ zfh_command_pick() {
   }
 
   dir="${dir:A}"
+  (( ZSH_FOLDER_HISTORY_COMPACT_ON_COMMAND )) && _zfh_compact_commands
   _zfh_refresh_commands
   commands="${_zfh_commands[$dir]-}"
 
@@ -874,7 +876,7 @@ Notes:
   - Disable the command widget with ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND=0.
   - Inside the folder picker, ctrl-k opens command search by default.
   - Disable folder-picker command search with ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=0.
-  - Command writes are append-only during execution; compaction happens on load by default.
+  - Command writes are append-only during execution; compaction happens when zfh commands run by default.
   - Preview panes are forced visible by default.
   - Environment variables:
       ZSH_FOLDER_HISTORY_FILE
@@ -882,7 +884,7 @@ Notes:
       ZSH_FOLDER_HISTORY_MAX_DIRS
       ZSH_FOLDER_HISTORY_MAX_COMMANDS
       ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR
-      ZSH_FOLDER_HISTORY_COMPACT_ON_LOAD
+      ZSH_FOLDER_HISTORY_COMPACT_ON_COMMAND
       ZSH_FOLDER_HISTORY_AUTO_BIND
       ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER
       ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND
@@ -953,11 +955,7 @@ fi
 
 if [[ -o interactive ]]; then
   _zfh_load_dirs
-  if (( ZSH_FOLDER_HISTORY_COMPACT_ON_LOAD )); then
-    _zfh_compact_commands
-  else
-    _zfh_load_commands
-  fi
+  _zfh_load_commands
   _zfh_add_dir "$PWD"
   add-zsh-hook preexec _zfh_preexec
   add-zsh-hook chpwd _zfh_chpwd
