@@ -116,7 +116,8 @@ EOF
 
 command_file=$(zsh -f <<'EOF'
 source "$ZFH_PLUGIN_FILE"
-print -r -- "$(_zfh_command_file_for_dir "$TEST_WORKDIR")"
+_zfh_command_file_for_dir "$TEST_WORKDIR"
+print -r -- "$REPLY"
 EOF
 )
 

@@ -29,6 +29,7 @@ fi
 : ${ZSH_FOLDER_HISTORY_ENABLE_ALIASES:=0}
 
 typeset -ga _zfh_dirs=()
+typeset -ga _zfh_reply=()
 typeset -gA _zfh_command_file_cache=()
 typeset -gi _zfh_internal_cd=0
 typeset -gi _zfh_folder_widget_registered=0
@@ -37,6 +38,7 @@ typeset -gi _zfh_line_init_hook_registered=0
 typeset -gi _zfh_lock_fd=-1
 typeset -gi _zfh_widget_active=0
 typeset -gi _zfh_record_seq=0
+typeset -gi _zfh_state_verified=0
 typeset -g _zfh_lock_backend=''
 typeset -g _zfh_lock_dir=''
 typeset -g _zfh_last_selected_command=''
@@ -52,19 +54,17 @@ _zfh_dedupe_limit() {
 
   local item
   local -A seen=()
-  local -a result=()
+  _zfh_reply=()
 
   for item in "$@"; do
     [[ -n $item ]] || continue
-    [[ -n ${seen[$item]-} ]] && continue
+    (( ${+seen[$item]} )) && continue
     seen[$item]=1
-    result+=("$item")
-    if (( limit > 0 && ${#result[@]} >= limit )); then
+    _zfh_reply+=("$item")
+    if (( limit > 0 && ${#_zfh_reply[@]} >= limit )); then
       break
     fi
   done
-
-  (( ${#result[@]} )) && print -rl -- "${result[@]}"
 }
 
 _zfh_trim_command_records() {
@@ -103,6 +103,7 @@ _zfh_filter_existing_dirs() {
   done
 
   _zfh_dedupe_limit "$ZSH_FOLDER_HISTORY_MAX_DIRS" "${existing[@]}"
+  (( ${#_zfh_reply[@]} )) && print -rl -- "${_zfh_reply[@]}"
 }
 
 _zfh_normalize_command() {
@@ -202,46 +203,42 @@ _zfh_is_ignored_command() {
 }
 
 _zfh_ensure_state_file() {
+  (( _zfh_state_verified )) && return 0
   emulate -L zsh
 
   _zfh_ensure_file "$ZSH_FOLDER_HISTORY_FILE"
   command mkdir -p -- "$ZSH_FOLDER_HISTORY_COMMANDS_DIR" || return 1
+  _zfh_state_verified=1
 }
 
 _zfh_hash_dir_path() {
   emulate -L zsh
 
-  local dir="${1:A}"
-  local hash_value
-
-  hash_value=$(printf '%s\n' "$dir" | cksum | command cut -d' ' -f1) || return 1
-  print -r -- "$hash_value"
+  local raw
+  raw=$(cksum <<< "$1") || return 1
+  REPLY=${raw%% *}
 }
 
 _zfh_command_file_for_dir() {
   emulate -L zsh
 
   local dir="${1:A}"
-  local hash_value
 
   if [[ -n ${_zfh_command_file_cache[$dir]-} ]]; then
-    print -r -- "${_zfh_command_file_cache[$dir]}"
+    REPLY=${_zfh_command_file_cache[$dir]}
     return 0
   fi
 
-  hash_value="$(_zfh_hash_dir_path "$dir")" || return 1
-  _zfh_command_file_cache[$dir]="$ZSH_FOLDER_HISTORY_COMMANDS_DIR/$hash_value"
-  print -r -- "${_zfh_command_file_cache[$dir]}"
+  _zfh_hash_dir_path "$dir" || return 1
+  _zfh_command_file_cache[$dir]="$ZSH_FOLDER_HISTORY_COMMANDS_DIR/$REPLY"
+  REPLY=${_zfh_command_file_cache[$dir]}
 }
 
 _zfh_commands_lock_file_for_dir() {
   emulate -L zsh
 
-  local dir="${1:A}"
-  local command_file
-
-  command_file="$(_zfh_command_file_for_dir "$dir")" || return 1
-  print -r -- "${command_file}.lockfile"
+  _zfh_command_file_for_dir "$1" || return 1
+  REPLY="${REPLY}.lockfile"
 }
 
 _zfh_read_command_records_file() {
@@ -304,53 +301,38 @@ _zfh_read_state_dirs() {
 }
 
 _zfh_lock_file() {
-  emulate -L zsh
-  print -r -- "${ZSH_FOLDER_HISTORY_FILE}.lockfile"
+  REPLY="${ZSH_FOLDER_HISTORY_FILE}.lockfile"
 }
 
 _zfh_append_dir_record() {
   emulate -L zsh
 
-  local dir="${1:A}"
-  local lock_file exit_code
-
   _zfh_ensure_state_file || return 1
-  lock_file="$(_zfh_lock_file)"
-  _zfh_acquire_lock "$lock_file" || return 1
-  print -r -- "$dir" >> "$ZSH_FOLDER_HISTORY_FILE"
-  exit_code=$?
-  _zfh_release_lock
-  return $exit_code
+  print -r -- "$1" >> "$ZSH_FOLDER_HISTORY_FILE"
 }
 
 _zfh_append_command_record() {
   emulate -L zsh
 
-  local dir="${1:A}"
   local record=$2
-  local lock_file command_file exit_code
+  local command_file
 
   _zfh_ensure_state_file || return 1
-  command_file="$(_zfh_command_file_for_dir "$dir")" || return 1
+  _zfh_command_file_for_dir "$1" || return 1
+  command_file=$REPLY
   command mkdir -p -- "${command_file:h}" || return 1
   [[ -f $command_file ]] || : >| "$command_file"
-  lock_file="$(_zfh_commands_lock_file_for_dir "$dir")" || return 1
-  _zfh_acquire_lock "$lock_file" || return 1
   print -r -- "$record" >> "$command_file"
-  exit_code=$?
-  _zfh_release_lock
-  return $exit_code
 }
 
 _zfh_records_for_dir() {
   emulate -L zsh
 
   local target_dir="${1:A}"
-  local command_file
 
   _zfh_ensure_state_file || return 1
-  command_file="$(_zfh_command_file_for_dir "$target_dir")" || return 1
-  _zfh_read_command_records_file "$command_file"
+  _zfh_command_file_for_dir "$target_dir" || return 1
+  _zfh_read_command_records_file "$REPLY"
 }
 
 _zfh_trim_commands_for_dir() {
@@ -361,8 +343,10 @@ _zfh_trim_commands_for_dir() {
   local -a kept_records=()
 
   _zfh_ensure_state_file || return 1
-  command_file="$(_zfh_command_file_for_dir "$target_dir")" || return 1
-  lock_file="$(_zfh_commands_lock_file_for_dir "$target_dir")" || return 1
+  _zfh_command_file_for_dir "$target_dir" || return 1
+  command_file=$REPLY
+  _zfh_commands_lock_file_for_dir "$target_dir" || return 1
+  lock_file=$REPLY
   _zfh_acquire_lock "$lock_file" || return 1
 
   kept_records=("${(@f)$(_zfh_read_command_records_file "$command_file")}")
@@ -537,12 +521,12 @@ _zfh_load_dirs() {
 _zfh_compact_dirs() {
   emulate -L zsh
 
-  local lock_file temp_file exit_code
+  local temp_file exit_code
   local -a compacted=()
 
   _zfh_ensure_state_file || return 1
-  lock_file="$(_zfh_lock_file)"
-  _zfh_acquire_lock "$lock_file" || return 1
+  _zfh_lock_file
+  _zfh_acquire_lock "$REPLY" || return 1
   compacted=("${(@f)$(_zfh_read_state_dirs)}")
 
   temp_file=$(command mktemp "${ZSH_FOLDER_HISTORY_FILE}.tmp.XXXXXX") || {
@@ -573,7 +557,8 @@ _zfh_add_dir() {
   local dir="${1:A}"
   [[ -n $dir && -d $dir ]] || return 0
 
-  _zfh_dirs=("${(@f)$(_zfh_dedupe_limit "$ZSH_FOLDER_HISTORY_MAX_DIRS" "$dir" "${_zfh_dirs[@]}")}")
+  _zfh_dedupe_limit "$ZSH_FOLDER_HISTORY_MAX_DIRS" "$dir" "${_zfh_dirs[@]}"
+  _zfh_dirs=("${_zfh_reply[@]}")
   _zfh_append_dir_record "$dir"
 }
 
