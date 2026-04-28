@@ -630,11 +630,12 @@ zfh_pick() {
     (( exit_code == 0 )) || return $exit_code
 
     if (( ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK )); then
-      key="${output%%$'\n'*}"
       if [[ "$output" == *$'\n'* ]]; then
+        key="${output%%$'\n'*}"
         selection="${output#*$'\n'}"
       else
-        selection=''
+        key=''
+        selection="$output"
       fi
     else
       key=''

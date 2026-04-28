@@ -5,6 +5,7 @@ set -euo pipefail
 SCRIPT_DIR=${0:A:h}
 REPO_DIR=${SCRIPT_DIR:h}
 PLUGIN_FILE="$REPO_DIR/zsh-folder-history.plugin.zsh"
+export ZFH_PLUGIN_FILE="$PLUGIN_FILE"
 
 fail() {
   print -u2 -- "FAIL: $*"
@@ -45,49 +46,58 @@ export ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=1
 export ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR=2
 export PATH="$FAKE_BIN:$PATH"
 
-setopt interactivecomments
-_zfh_test_zdotdir="$TEST_DIR/zdotdir"
-mkdir -p "$_zfh_test_zdotdir"
-export ZDOTDIR="$_zfh_test_zdotdir"
+TEST_WORKDIR="$TEST_DIR/work"
+mkdir -p "$TEST_WORKDIR"
+export TEST_WORKDIR
 
-print -r -- "source $PLUGIN_FILE" >| "$ZDOTDIR/.zshrc"
+setopt interactivecomments
 
 zsh -fi <<'EOF'
+source "$ZFH_PLUGIN_FILE"
 [[ -f $ZSH_FOLDER_HISTORY_FILE ]] || exit 11
 [[ -f $ZSH_FOLDER_HISTORY_COMMANDS_FILE ]] || exit 12
 [[ "$(bindkey '^H')" == *'zfh_widget'* ]] || exit 15
 [[ "$(bindkey '^K')" == *'zfh_command_widget'* ]] || exit 16
-_zfh_record_command "$PWD" 'echo hello'
-_zfh_record_command "$PWD" 'echo world'
-commands_output=$(zfh commands "$PWD")
-[[ "$commands_output" == *'echo hello'* ]] || exit 13
-[[ "$commands_output" == *'echo world'* ]] || exit 14
 EOF
 
-status=$?
-[[ $status -eq 0 ]] || fail "interactive plugin smoke test failed with status $status"
+test_exit_code=$?
+[[ $test_exit_code -eq 0 ]] || fail "interactive plugin smoke test failed with status $test_exit_code"
 
 [[ -f $ZSH_FOLDER_HISTORY_FILE ]] || fail 'directory state file not created'
 [[ -f $ZSH_FOLDER_HISTORY_COMMANDS_FILE ]] || fail 'command state file not created'
 
-dir_line_count_before=$(wc -l < "$ZSH_FOLDER_HISTORY_FILE" | tr -d ' ')
+dir_a="$TEST_DIR/dir-a"
+dir_b="$TEST_DIR/dir-b"
+mkdir -p "$dir_a" "$dir_b"
+dir_a="${dir_a:A}"
+dir_b="${dir_b:A}"
+printf '%s\n%s\n%s\n' "$dir_a" "$dir_b" "$dir_a" >| "$ZSH_FOLDER_HISTORY_FILE"
 
-zsh -fi <<'EOF'
-_zfh_add_dir "$PWD"
-_zfh_add_dir "$PWD"
+zsh -f <<'EOF'
+source "$ZFH_PLUGIN_FILE"
 zfh list >/dev/null
 EOF
 
+dir_file_after=$(<"$ZSH_FOLDER_HISTORY_FILE")
 dir_line_count_after=$(wc -l < "$ZSH_FOLDER_HISTORY_FILE" | tr -d ' ')
-[[ "$dir_line_count_after" -ge 1 ]] || fail 'directory history file should keep entries after compaction'
-[[ "$dir_line_count_after" -le "$dir_line_count_before" ]] || fail 'directory history compaction should not grow the file'
+assert_eq "2" "$dir_line_count_after" 'directory history compaction should keep unique directories only'
+assert_contains "$dir_file_after" "$dir_a" 'directory history should keep first directory after compaction'
+assert_contains "$dir_file_after" "$dir_b" 'directory history should keep second directory after compaction'
+
+zsh -f <<'EOF'
+source "$ZFH_PLUGIN_FILE"
+_zfh_record_command "$TEST_WORKDIR" 'echo hello'
+_zfh_record_command "$TEST_WORKDIR" 'echo world'
+EOF
 
 selected_dir="$TEST_DIR/selected dir"
 mkdir -p "$selected_dir"
+selected_dir="${selected_dir:A}"
 export FAKE_FZF_OUTPUT_FILE="$TEST_DIR/fzf-output"
 printf '\n%s\n' "$selected_dir" >| "$FAKE_FZF_OUTPUT_FILE"
 
-pick_state=$(zsh -fi <<'EOF'
+pick_state=$(zsh -f <<'EOF'
+source "$ZFH_PLUGIN_FILE"
 cd "$HOME"
 zfh_pick >/dev/null
 print -r -- "PWD=$PWD"
@@ -98,11 +108,6 @@ EOF
 assert_contains "$pick_state" "PWD=$selected_dir" 'zfh_pick should cd into selected directory'
 assert_contains "$pick_state" "DIR=$selected_dir" 'zfh_pick should record selected directory for widget flow'
 
-older_dir="$TEST_DIR/older"
-newer_dir="$TEST_DIR/newer"
-mkdir -p "$older_dir" "$newer_dir"
-printf '%s\n%s\n%s\n' "$older_dir" "$newer_dir" "$older_dir" >| "$ZSH_FOLDER_HISTORY_FILE"
-
 raw_file=$(<"$ZSH_FOLDER_HISTORY_COMMANDS_FILE")
 assert_contains "$raw_file" $'echo hello' 'commands file should contain first command'
 assert_contains "$raw_file" $'echo world' 'commands file should contain second command'
@@ -110,8 +115,9 @@ assert_contains "$raw_file" $'echo world' 'commands file should contain second c
 line_count_before=$(wc -l < "$ZSH_FOLDER_HISTORY_COMMANDS_FILE" | tr -d ' ')
 [[ "$line_count_before" -ge 2 ]] || fail 'append-only commands file should contain appended records'
 
-reloaded_output=$(zsh -fi <<'EOF'
-print -r -- "$(zfh commands "$PWD")"
+reloaded_output=$(zsh -f <<'EOF'
+source "$ZFH_PLUGIN_FILE"
+print -r -- "$(zfh commands "$TEST_WORKDIR")"
 EOF
 )
 assert_contains "$reloaded_output" 'echo hello' 'reloaded commands should include first command'
@@ -120,13 +126,15 @@ assert_contains "$reloaded_output" 'echo world' 'reloaded commands should includ
 line_count_after=$(wc -l < "$ZSH_FOLDER_HISTORY_COMMANDS_FILE" | tr -d ' ')
 assert_eq "$line_count_before" "$line_count_after" 'append-only command file should not be compacted'
 
-zsh -fi <<'EOF'
-_zfh_record_command "$PWD" 'echo third'
-print -r -- "$(zfh commands "$PWD")"
+zsh -f <<'EOF'
+source "$ZFH_PLUGIN_FILE"
+_zfh_record_command "$TEST_WORKDIR" 'echo third'
+print -r -- "$(zfh commands "$TEST_WORKDIR")"
 EOF
 
-trimmed_output=$(zsh -fi <<'EOF'
-print -r -- "$(zfh commands "$PWD")"
+trimmed_output=$(zsh -f <<'EOF'
+source "$ZFH_PLUGIN_FILE"
+print -r -- "$(zfh commands "$TEST_WORKDIR")"
 EOF
 )
 [[ "$trimmed_output" == *'echo third'* ]] || fail 'trimmed output should include newest command'

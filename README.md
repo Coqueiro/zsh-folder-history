@@ -1,7 +1,6 @@
 # zsh-folder-history
 
-[![Tests](https://github.com/Coqueiro/zsh-folder-history/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/Coqueiro/zsh-folder-history/actions/workflows/test.yml)
-[![License](https://img.shields.io/github/license/Coqueiro/zsh-folder-history)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Standalone zsh folder history with an `fzf` picker and per-directory command previews.
 
@@ -36,29 +35,7 @@ git clone https://github.com/Coqueiro/zsh-folder-history.git ${ZSH_CUSTOM:-~/.oh
 source ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-folder-history/zsh-folder-history.plugin.zsh
 ```
 
-### Antidote
-
-```txt
-Coqueiro/zsh-folder-history
-```
-
-### Antigen
-
-```zsh
-antigen bundle Coqueiro/zsh-folder-history
-```
-
-### Zinit
-
-```zsh
-zinit light Coqueiro/zsh-folder-history
-```
-
-### Zplug
-
-```zsh
-zplug "Coqueiro/zsh-folder-history"
-```
+The plugin uses a standard `*.plugin.zsh` layout, so other zsh plugin managers may also work, but the plain zsh and Oh My Zsh installs above are the only documented paths for now.
 
 ## Quick start
 
