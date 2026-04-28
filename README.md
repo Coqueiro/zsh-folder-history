@@ -15,7 +15,7 @@ Track the directories you visit and the commands you run there, then jump back w
 
 ## Requirements
 
-- zsh
+- `zsh`
 - `fzf`
 
 ## Installation
