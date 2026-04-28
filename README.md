@@ -55,6 +55,7 @@ zfh
 zfh list
 zfh commands
 zfh command-pick
+zfh help
 ```
 
 If you want to test the wrapper from the repo checkout:
@@ -85,6 +86,8 @@ Defaults:
 | `ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK` | `1` | enable command search inside folder picker |
 | `ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY` | `alt-j` | key used inside folder picker to open command search |
 | `ZSH_FOLDER_HISTORY_ENABLE_ALIASES` | `0` | enable aliases like `folder-history` |
+
+> **Note:** `Ctrl-H` (`^H`) is also the Backspace key in many terminals. If this conflicts with your setup, change the binding with `ZSH_FOLDER_HISTORY_BINDKEY`.
 
 Common tweaks:
 

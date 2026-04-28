@@ -10,6 +10,11 @@ autoload -U add-zsh-hook
 autoload -U add-zle-hook-widget 2>/dev/null || true
 zmodload zsh/datetime 2>/dev/null || true
 
+typeset -gi _zfh_has_strftime=0
+if whence -w strftime >/dev/null 2>&1; then
+  _zfh_has_strftime=1
+fi
+
 : ${ZSH_FOLDER_HISTORY_FILE:=${XDG_STATE_HOME:-$HOME/.local/state}/zsh-folder-history/directories}
 : ${ZSH_FOLDER_HISTORY_MAX_DIRS:=500}
 : ${ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR:=1000}
@@ -59,7 +64,7 @@ _zfh_dedupe_limit() {
     fi
   done
 
-  print -rl -- "${result[@]}"
+  (( ${#result[@]} )) && print -rl -- "${result[@]}"
 }
 
 _zfh_trim_command_records() {
@@ -83,7 +88,7 @@ _zfh_trim_command_records() {
     fi
   done
 
-  print -rl -- "${result[@]}"
+  (( ${#result[@]} )) && print -rl -- "${result[@]}"
 }
 
 _zfh_filter_existing_dirs() {
@@ -146,7 +151,7 @@ _zfh_now_sortkey() {
   pid_num=$((10#$$))
   seq_num=$((10#$_zfh_record_seq))
 
-  command printf '%010d%06d%06d%06d\n' "$seconds_num" "$microseconds_num" "$pid_num" "$seq_num"
+  printf '%010d%06d%06d%06d\n' "$seconds_num" "$microseconds_num" "$pid_num" "$seq_num"
 }
 
 _zfh_format_timestamp() {
@@ -155,7 +160,7 @@ _zfh_format_timestamp() {
   local epoch=$1
   local formatted=''
 
-  if whence -w strftime >/dev/null 2>&1; then
+  if (( _zfh_has_strftime )); then
     strftime -s formatted '%Y-%m-%d %H:%M:%S' "$epoch"
     print -r -- "$formatted"
     return 0
@@ -208,14 +213,6 @@ _zfh_hash_dir_path() {
 
   local dir="${1:A}"
   local hash_value
-
-  if zmodload zsh/md5 2>/dev/null; then
-    hash_value=$(md5 -s "$dir" 2>/dev/null) || return 1
-    hash_value=${hash_value##* = }
-    hash_value=${hash_value##* }
-    print -r -- "$hash_value"
-    return 0
-  fi
 
   hash_value=$(printf '%s\n' "$dir" | cksum | command cut -d' ' -f1) || return 1
   print -r -- "$hash_value"
@@ -311,22 +308,19 @@ _zfh_lock_file() {
   print -r -- "${ZSH_FOLDER_HISTORY_FILE}.lockfile"
 }
 
-_zfh_commands_lock_file() {
-  emulate -L zsh
-  print -r -- "${ZSH_FOLDER_HISTORY_COMMANDS_FILE}.lockfile"
-}
-
 _zfh_append_dir_record() {
   emulate -L zsh
 
   local dir="${1:A}"
-  local lock_file
+  local lock_file exit_code
 
   _zfh_ensure_state_file || return 1
   lock_file="$(_zfh_lock_file)"
   _zfh_acquire_lock "$lock_file" || return 1
   print -r -- "$dir" >> "$ZSH_FOLDER_HISTORY_FILE"
+  exit_code=$?
   _zfh_release_lock
+  return $exit_code
 }
 
 _zfh_append_command_record() {
@@ -334,7 +328,7 @@ _zfh_append_command_record() {
 
   local dir="${1:A}"
   local record=$2
-  local lock_file command_file
+  local lock_file command_file exit_code
 
   _zfh_ensure_state_file || return 1
   command_file="$(_zfh_command_file_for_dir "$dir")" || return 1
@@ -343,7 +337,9 @@ _zfh_append_command_record() {
   lock_file="$(_zfh_commands_lock_file_for_dir "$dir")" || return 1
   _zfh_acquire_lock "$lock_file" || return 1
   print -r -- "$record" >> "$command_file"
+  exit_code=$?
   _zfh_release_lock
+  return $exit_code
 }
 
 _zfh_records_for_dir() {
@@ -392,7 +388,7 @@ _zfh_make_command_record() {
   local sortkey=$1
   local epoch=$2
   local command_text=$3
-  command printf '%s\t%s\t%s\n' "$sortkey" "$epoch" "$command_text"
+  printf '%s\t%s\t%s\n' "$sortkey" "$epoch" "$command_text"
 }
 
 _zfh_command_record_sortkey() {
@@ -423,10 +419,13 @@ _zfh_format_command_record() {
   emulate -L zsh
 
   local record=$1
-  local epoch command_text
+  local rest epoch command_text
 
-  epoch="$(_zfh_command_record_epoch "$record")"
-  command_text="$(_zfh_command_record_text "$record")"
+  # inline record field extraction
+  rest="${record#*$'\t'}"
+  epoch="${rest%%$'\t'*}"
+  command_text="${rest#*$'\t'}"
+
   print -r -- "[$(_zfh_format_timestamp "$epoch")] $command_text"
 }
 
@@ -584,16 +583,50 @@ _zfh_record_command() {
   local dir="${1:A}"
   local command_text="$2"
   local sortkey epoch record
+  local realtime seconds microseconds
+  local -i seconds_num microseconds_num pid_num seq_num
 
   [[ -d $dir ]] || return 0
-  command_text="$(_zfh_normalize_command "$command_text")"
+
+  # inline _zfh_normalize_command
+  command_text=${command_text//$'\r'/ }
+  command_text=${command_text//$'\n'/ ' ↩ '}
+  command_text=${command_text//$'\t'/ }
+
   [[ -n ${command_text//[[:space:]]/} ]] || return 0
   _zfh_is_ignored_command "$command_text" && return 0
 
-  sortkey="$(_zfh_now_sortkey)"
-  epoch="$(_zfh_now_epoch)"
-  record="$(_zfh_make_command_record "$sortkey" "$epoch" "$command_text")"
-  record="${record%$'\n'}"
+  # inline _zfh_now_epoch
+  if [[ -n ${EPOCHSECONDS-} ]]; then
+    epoch=$EPOCHSECONDS
+  else
+    epoch=$(command date +%s)
+  fi
+
+  # inline _zfh_now_sortkey
+  realtime=${EPOCHREALTIME-}
+  (( _zfh_record_seq++ ))
+
+  if [[ -n $realtime && $realtime == *.* ]]; then
+    seconds=${realtime%%.*}
+    microseconds=${realtime#*.}
+    microseconds=${microseconds[1,6]}
+    microseconds=${(r:6::0:)microseconds}
+  else
+    seconds=$epoch
+    microseconds=000000
+  fi
+
+  seconds_num=$((10#$seconds))
+  microseconds_num=$((10#$microseconds))
+  pid_num=$((10#$$))
+  seq_num=$((10#$_zfh_record_seq))
+
+  printf -v sortkey '%010d%06d%06d%06d' "$seconds_num" "$microseconds_num" "$pid_num" "$seq_num"
+
+  # inline _zfh_make_command_record
+  record="${sortkey}"$'\t'"${epoch}"$'\t'"${command_text}"
+
   _zfh_append_command_record "$dir" "$record"
 }
 
@@ -629,12 +662,20 @@ _zfh_build_command_picker_input() {
 
   local dir="${1:A}"
   local commands=$2
-  local record display command_text epoch
+  local record rest epoch command_text display
 
   for record in "${(@f)commands}"; do
-    display="$(_zfh_format_command_record "$record")"
-    epoch="$(_zfh_command_record_epoch "$record")"
-    command_text="$(_zfh_normalize_command "$(_zfh_command_record_text "$record")")"
+    # inline record field extraction
+    rest="${record#*$'\t'}"
+    epoch="${rest%%$'\t'*}"
+    command_text="${rest#*$'\t'}"
+
+    # inline normalize
+    command_text=${command_text//$'\r'/ }
+    command_text=${command_text//$'\n'/ ' ↩ '}
+    command_text=${command_text//$'\t'/ }
+
+    display="[$(_zfh_format_timestamp "$epoch")] $command_text"
     printf '%s\t%s\t%s\t%s\n' "$display" "$dir" "$epoch" "$command_text"
   done
 }
@@ -741,7 +782,7 @@ zfh_command_pick() {
   setopt localoptions pipefail no_aliases
 
   local dir="${1:-$PWD}"
-  shift
+  (( $# )) && shift
   local query="$*"
   local selection selected_command commands
   local exit_code
