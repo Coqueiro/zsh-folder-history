@@ -12,7 +12,7 @@ zmodload zsh/datetime 2>/dev/null || true
 : ${ZSH_FOLDER_HISTORY_FILE:=${XDG_STATE_HOME:-$HOME/.local/state}/zsh-folder-history/directories}
 : ${ZSH_FOLDER_HISTORY_MAX_DIRS:=500}
 : ${ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR:=1000}
-: ${ZSH_FOLDER_HISTORY_COMMANDS_FILE:=${ZSH_FOLDER_HISTORY_FILE:h}/commands.tsv}
+: ${ZSH_FOLDER_HISTORY_COMMANDS_DIR:=${ZSH_FOLDER_HISTORY_FILE:h}/commands}
 : ${ZSH_FOLDER_HISTORY_AUTO_BIND:=1}
 : ${ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER:=1}
 : ${ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND:=1}
@@ -23,6 +23,7 @@ zmodload zsh/datetime 2>/dev/null || true
 : ${ZSH_FOLDER_HISTORY_ENABLE_ALIASES:=0}
 
 typeset -ga _zfh_dirs=()
+typeset -gA _zfh_command_file_cache=()
 typeset -gi _zfh_internal_cd=0
 typeset -gi _zfh_folder_widget_registered=0
 typeset -gi _zfh_command_widget_registered=0
@@ -195,7 +196,96 @@ _zfh_ensure_state_file() {
   emulate -L zsh
 
   _zfh_ensure_file "$ZSH_FOLDER_HISTORY_FILE"
-  _zfh_ensure_file "$ZSH_FOLDER_HISTORY_COMMANDS_FILE"
+  command mkdir -p -- "$ZSH_FOLDER_HISTORY_COMMANDS_DIR" || return 1
+}
+
+_zfh_hash_dir_path() {
+  emulate -L zsh
+
+  local dir="${1:A}"
+  local hash_value
+
+  if zmodload zsh/md5 2>/dev/null; then
+    hash_value=$(md5 -s "$dir" 2>/dev/null) || return 1
+    hash_value=${hash_value##* = }
+    hash_value=${hash_value##* }
+    print -r -- "$hash_value"
+    return 0
+  fi
+
+  hash_value=$(printf '%s\n' "$dir" | cksum | command cut -d' ' -f1) || return 1
+  print -r -- "$hash_value"
+}
+
+_zfh_command_file_for_dir() {
+  emulate -L zsh
+
+  local dir="${1:A}"
+  local hash_value
+
+  if [[ -n ${_zfh_command_file_cache[$dir]-} ]]; then
+    print -r -- "${_zfh_command_file_cache[$dir]}"
+    return 0
+  fi
+
+  hash_value="$(_zfh_hash_dir_path "$dir")" || return 1
+  _zfh_command_file_cache[$dir]="$ZSH_FOLDER_HISTORY_COMMANDS_DIR/$hash_value"
+  print -r -- "${_zfh_command_file_cache[$dir]}"
+}
+
+_zfh_commands_lock_file_for_dir() {
+  emulate -L zsh
+
+  local dir="${1:A}"
+  local command_file
+
+  command_file="$(_zfh_command_file_for_dir "$dir")" || return 1
+  print -r -- "${command_file}.lockfile"
+}
+
+_zfh_read_command_records_file() {
+  emulate -L zsh
+
+  local command_file=$1
+  local sortkey epoch command_text record
+  local -a records=()
+
+  [[ -r $command_file ]] || return 0
+
+  while IFS=$'\t' read -r sortkey epoch command_text; do
+    [[ -n $sortkey && -n $epoch && -n $command_text ]] || continue
+    record="${sortkey}"$'\t'"${epoch}"$'\t'"${command_text}"
+    records+=("$record")
+  done < "$command_file"
+
+  _zfh_trim_command_records "$ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR" "${records[@]}"
+}
+
+_zfh_write_command_records_file() {
+  emulate -L zsh
+
+  local command_file=$1
+  shift
+  local temp_file exit_code
+  local -a records=("$@")
+
+  command mkdir -p -- "${command_file:h}" || return 1
+  temp_file=$(command mktemp "${command_file}.tmp.XXXXXX") || return 1
+
+  if (( ${#records[@]} == 0 )); then
+    : >| "$temp_file"
+  else
+    print -rl -- "${records[@]}" >| "$temp_file"
+  fi
+
+  exit_code=$?
+  if (( exit_code == 0 )); then
+    command mv -f -- "$temp_file" "$command_file"
+    exit_code=$?
+  fi
+
+  [[ -f $temp_file ]] && command rm -f -- "$temp_file"
+  return $exit_code
 }
 
 _zfh_read_state_dirs() {
@@ -240,12 +330,15 @@ _zfh_append_command_record() {
 
   local dir="${1:A}"
   local record=$2
-  local lock_file
+  local lock_file command_file
 
   _zfh_ensure_state_file || return 1
-  lock_file="$(_zfh_commands_lock_file)"
+  command_file="$(_zfh_command_file_for_dir "$dir")" || return 1
+  command mkdir -p -- "${command_file:h}" || return 1
+  [[ -f $command_file ]] || : >| "$command_file"
+  lock_file="$(_zfh_commands_lock_file_for_dir "$dir")" || return 1
   _zfh_acquire_lock "$lock_file" || return 1
-  print -r -- "$dir"$'\t'"$record" >> "$ZSH_FOLDER_HISTORY_COMMANDS_FILE"
+  print -r -- "$record" >> "$command_file"
   _zfh_release_lock
 }
 
@@ -253,63 +346,28 @@ _zfh_records_for_dir() {
   emulate -L zsh
 
   local target_dir="${1:A}"
-  local dir sortkey epoch command_text record
-  local -a records=()
+  local command_file
 
   _zfh_ensure_state_file || return 1
-  [[ -r $ZSH_FOLDER_HISTORY_COMMANDS_FILE ]] || return 0
-
-  while IFS=$'\t' read -r dir sortkey epoch command_text; do
-    [[ -n $dir && -n $sortkey && -n $epoch && -n $command_text ]] || continue
-    [[ "${dir:A}" == "$target_dir" ]] || continue
-    record="${sortkey}"$'\t'"${epoch}"$'\t'"${command_text}"
-    records+=("$record")
-  done < "$ZSH_FOLDER_HISTORY_COMMANDS_FILE"
-
-  _zfh_trim_command_records "$ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR" "${records[@]}"
+  command_file="$(_zfh_command_file_for_dir "$target_dir")" || return 1
+  _zfh_read_command_records_file "$command_file"
 }
 
 _zfh_trim_commands_for_dir() {
   emulate -L zsh
 
   local target_dir="${1:A}"
-  local lock_file temp_file exit_code dir sortkey epoch command_text
-  local record
+  local lock_file command_file exit_code
   local -a kept_records=()
 
   _zfh_ensure_state_file || return 1
-  lock_file="$(_zfh_commands_lock_file)"
+  command_file="$(_zfh_command_file_for_dir "$target_dir")" || return 1
+  lock_file="$(_zfh_commands_lock_file_for_dir "$target_dir")" || return 1
   _zfh_acquire_lock "$lock_file" || return 1
 
-  kept_records=("${(@f)$(_zfh_records_for_dir "$target_dir")}")
-  temp_file=$(command mktemp "${ZSH_FOLDER_HISTORY_COMMANDS_FILE}.tmp.XXXXXX") || {
-    _zfh_release_lock
-    return 1
-  }
-
-  {
-    if [[ -r $ZSH_FOLDER_HISTORY_COMMANDS_FILE ]]; then
-      while IFS=$'\t' read -r dir sortkey epoch command_text; do
-        [[ -n $dir && -n $sortkey && -n $epoch && -n $command_text ]] || continue
-        if [[ "${dir:A}" == "$target_dir" ]]; then
-          continue
-        fi
-        print -r -- "$dir"$'\t'"$sortkey"$'\t'"$epoch"$'\t'"$command_text"
-      done < "$ZSH_FOLDER_HISTORY_COMMANDS_FILE"
-    fi
-
-    for record in "${kept_records[@]}"; do
-      print -r -- "$target_dir"$'\t'"$record"
-    done
-  } >| "$temp_file"
+  kept_records=("${(@f)$(_zfh_read_command_records_file "$command_file")}")
+  _zfh_write_command_records_file "$command_file" "${kept_records[@]}"
   exit_code=$?
-
-  if (( exit_code == 0 )); then
-    command mv -f -- "$temp_file" "$ZSH_FOLDER_HISTORY_COMMANDS_FILE"
-    exit_code=$?
-  fi
-
-  [[ -f $temp_file ]] && command rm -f -- "$temp_file"
   _zfh_release_lock
   return $exit_code
 }
@@ -841,7 +899,7 @@ Notes:
   - Preview panes are forced visible by default.
   - Environment variables:
       ZSH_FOLDER_HISTORY_FILE
-      ZSH_FOLDER_HISTORY_COMMANDS_FILE
+      ZSH_FOLDER_HISTORY_COMMANDS_DIR
       ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR
       ZSH_FOLDER_HISTORY_MAX_DIRS
       ZSH_FOLDER_HISTORY_AUTO_BIND

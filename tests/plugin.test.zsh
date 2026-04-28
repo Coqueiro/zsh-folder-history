@@ -40,7 +40,7 @@ chmod +x "$FAKE_BIN/fzf"
 export HOME="$TEST_DIR/home"
 export XDG_STATE_HOME="$TEST_DIR/state"
 export ZSH_FOLDER_HISTORY_FILE="$XDG_STATE_HOME/zfh/directories"
-export ZSH_FOLDER_HISTORY_COMMANDS_FILE="$XDG_STATE_HOME/zfh/commands.tsv"
+export ZSH_FOLDER_HISTORY_COMMANDS_DIR="$XDG_STATE_HOME/zfh/commands"
 export ZSH_FOLDER_HISTORY_AUTO_BIND=1
 export ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=1
 export ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR=2
@@ -55,7 +55,7 @@ setopt interactivecomments
 zsh -fi <<'EOF'
 source "$ZFH_PLUGIN_FILE"
 [[ -f $ZSH_FOLDER_HISTORY_FILE ]] || exit 11
-[[ -f $ZSH_FOLDER_HISTORY_COMMANDS_FILE ]] || exit 12
+[[ -d $ZSH_FOLDER_HISTORY_COMMANDS_DIR ]] || exit 12
 [[ "$(bindkey '^H')" == *'zfh_widget'* ]] || exit 15
 [[ "$(bindkey '^K')" == *'zfh_command_widget'* ]] || exit 16
 EOF
@@ -64,7 +64,7 @@ test_exit_code=$?
 [[ $test_exit_code -eq 0 ]] || fail "interactive plugin smoke test failed with status $test_exit_code"
 
 [[ -f $ZSH_FOLDER_HISTORY_FILE ]] || fail 'directory state file not created'
-[[ -f $ZSH_FOLDER_HISTORY_COMMANDS_FILE ]] || fail 'command state file not created'
+[[ -d $ZSH_FOLDER_HISTORY_COMMANDS_DIR ]] || fail 'command state directory not created'
 
 dir_a="$TEST_DIR/dir-a"
 dir_b="$TEST_DIR/dir-b"
@@ -90,6 +90,14 @@ _zfh_record_command "$TEST_WORKDIR" 'echo hello'
 _zfh_record_command "$TEST_WORKDIR" 'echo world'
 EOF
 
+command_file=$(zsh -f <<'EOF'
+source "$ZFH_PLUGIN_FILE"
+print -r -- "$(_zfh_command_file_for_dir "$TEST_WORKDIR")"
+EOF
+)
+
+[[ -f "$command_file" ]] || fail 'per-dir command file should exist for the target directory'
+
 selected_dir="$TEST_DIR/selected dir"
 mkdir -p "$selected_dir"
 selected_dir="${selected_dir:A}"
@@ -108,11 +116,11 @@ EOF
 assert_contains "$pick_state" "PWD=$selected_dir" 'zfh_pick should cd into selected directory'
 assert_contains "$pick_state" "DIR=$selected_dir" 'zfh_pick should record selected directory for widget flow'
 
-raw_file=$(<"$ZSH_FOLDER_HISTORY_COMMANDS_FILE")
-assert_contains "$raw_file" $'echo hello' 'commands file should contain first command'
-assert_contains "$raw_file" $'echo world' 'commands file should contain second command'
+raw_file=$(<"$command_file")
+assert_contains "$raw_file" $'echo hello' 'per-dir commands file should contain first command'
+assert_contains "$raw_file" $'echo world' 'per-dir commands file should contain second command'
 
-line_count_before=$(wc -l < "$ZSH_FOLDER_HISTORY_COMMANDS_FILE" | tr -d ' ')
+line_count_before=$(wc -l < "$command_file" | tr -d ' ')
 [[ "$line_count_before" -ge 2 ]] || fail 'append-only commands file should contain appended records'
 
 reloaded_output=$(zsh -f <<'EOF'
@@ -123,7 +131,7 @@ EOF
 assert_contains "$reloaded_output" 'echo hello' 'reloaded commands should include first command'
 assert_contains "$reloaded_output" 'echo world' 'reloaded commands should include second command'
 
-line_count_after=$(wc -l < "$ZSH_FOLDER_HISTORY_COMMANDS_FILE" | tr -d ' ')
+line_count_after=$(wc -l < "$command_file" | tr -d ' ')
 assert_eq "$line_count_before" "$line_count_after" 'append-only command file should not be compacted'
 
 zsh -f <<'EOF'

@@ -74,7 +74,7 @@ Set variables before sourcing the plugin:
 
 ```zsh
 export ZSH_FOLDER_HISTORY_FILE="$HOME/.local/state/zsh-folder-history/directories"
-export ZSH_FOLDER_HISTORY_COMMANDS_FILE="$HOME/.local/state/zsh-folder-history/commands.tsv"
+export ZSH_FOLDER_HISTORY_COMMANDS_DIR="$HOME/.local/state/zsh-folder-history/commands"
 export ZSH_FOLDER_HISTORY_MAX_DIRS=500
 export ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR=1000
 export ZSH_FOLDER_HISTORY_ENABLE_ALIASES=1
@@ -90,7 +90,7 @@ export ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY='ctrl-k'
 ### Environment variables
 
 - `ZSH_FOLDER_HISTORY_FILE`: path for persisted directory history
-- `ZSH_FOLDER_HISTORY_COMMANDS_FILE`: path for persisted command history
+- `ZSH_FOLDER_HISTORY_COMMANDS_DIR`: directory for persisted per-path command history files
 - `ZSH_FOLDER_HISTORY_MAX_DIRS`: max persisted directories
 - `ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR`: max persisted commands per directory
 - `ZSH_FOLDER_HISTORY_AUTO_BIND`: enable or disable default widget binding on load
@@ -105,7 +105,7 @@ export ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY='ctrl-k'
 Defaults:
 
 - `ZSH_FOLDER_HISTORY_FILE`: `${XDG_STATE_HOME:-$HOME/.local/state}/zsh-folder-history/directories`
-- `ZSH_FOLDER_HISTORY_COMMANDS_FILE`: `${ZSH_FOLDER_HISTORY_FILE:h}/commands.tsv`
+- `ZSH_FOLDER_HISTORY_COMMANDS_DIR`: `${ZSH_FOLDER_HISTORY_FILE:h}/commands`
 - `ZSH_FOLDER_HISTORY_MAX_DIRS`: `500`
 - `ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR`: `1000`
 - `ZSH_FOLDER_HISTORY_AUTO_BIND`: `1`
@@ -120,7 +120,7 @@ Defaults:
 ## How it works
 
 - Directory history is appended on navigation and compacted when `zfh` folder-history commands run.
-- Command history is appended on execution and trimmed only for the requested directory.
+- Command history is stored in one hashed file per directory and trimmed only for the requested directory.
 - Command previews are generated lazily so the picker opens faster.
 
 ## Tests
