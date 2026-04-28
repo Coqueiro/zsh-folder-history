@@ -1,6 +1,5 @@
-# Temporary test config for zsh-folder-history.
-# Source it from an interactive zsh shell:
-#   source ~/Github/zsh-folder-history/examples/zshrc.zfh
+# Example config for local testing.
+# Adjust the plugin path to wherever you cloned zsh-folder-history.
 
 export ZSH_FOLDER_HISTORY_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/zsh-folder-history-test/directories"
 export ZSH_FOLDER_HISTORY_COMMANDS_FILE="${ZSH_FOLDER_HISTORY_FILE:h}/commands.tsv"
@@ -11,4 +10,4 @@ export ZSH_FOLDER_HISTORY_COMMAND_BINDKEY='^K'
 export ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=1
 export ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY='ctrl-k'
 
-source "$HOME/Github/zsh-folder-history/zsh-folder-history.plugin.zsh"
+source "/path/to/zsh-folder-history/zsh-folder-history.plugin.zsh"

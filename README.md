@@ -1,35 +1,29 @@
 # zsh-folder-history
 
-Standalone zsh folder picker with `fzf` previews of commands used in each folder.
+[![Tests](https://github.com/Coqueiro/zsh-folder-history/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/Coqueiro/zsh-folder-history/actions/workflows/test.yml)
+[![License](https://img.shields.io/github/license/Coqueiro/zsh-folder-history)](LICENSE)
 
-## Goals
+Standalone zsh folder history with an `fzf` picker and per-directory command previews.
 
-- no hard dependency on `dirhistory`
-- no prompt/plugin-specific coupling
-- callable as a normal command first
-- keybinding/widget can be added later
-
-## Current behavior
+## Features
 
 - Tracks visited directories with native zsh hooks.
-- Persists a compacted directory history across shell sessions.
-- Persists timestamped commands per directory across shell sessions.
-- Commands keep the most recent entries only for the directory being requested.
-- Command writes are append-only during command execution.
-- Opens an `fzf` picker and `cd`s into the selected directory.
-- Shows session commands for the highlighted directory in the preview pane.
-- Lets you open a second `fzf` picker to search commands inside the highlighted directory.
+- Persists directory history and timestamped per-directory command history across sessions.
+- Opens a folder picker with `Ctrl-H` by default.
+- Opens a command picker with `Ctrl-K` by default.
+- Inside the folder picker, `Ctrl-K` opens the command picker for the highlighted directory.
+- Uses XDG-friendly state files by default.
 
 ## Requirements
 
 - zsh
 - `fzf`
 
-## Install
+## Installation
 
 ### Plain zsh
 
-Clone the repo and source the plugin file from your zsh config:
+Clone the repo and source the plugin from your `~/.zshrc`:
 
 ```zsh
 source /path/to/zsh-folder-history/zsh-folder-history.plugin.zsh
@@ -37,134 +31,65 @@ source /path/to/zsh-folder-history/zsh-folder-history.plugin.zsh
 
 ### Oh My Zsh
 
-Clone into your custom plugins directory:
-
 ```zsh
-git clone https://github.com/<you>/zsh-folder-history.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-folder-history
-```
-
-Then source it from `~/.zshrc` or add it through your plugin bootstrap:
-
-```zsh
+git clone https://github.com/Coqueiro/zsh-folder-history.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-folder-history
 source ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-folder-history/zsh-folder-history.plugin.zsh
 ```
 
 ### Antidote
 
-Add the repo to your bundle file, then load as usual:
-
 ```txt
-<you>/zsh-folder-history
+Coqueiro/zsh-folder-history
 ```
 
 ### Antigen
 
 ```zsh
-antigen bundle <you>/zsh-folder-history
+antigen bundle Coqueiro/zsh-folder-history
 ```
 
 ### Zinit
 
 ```zsh
-zinit light <you>/zsh-folder-history
+zinit light Coqueiro/zsh-folder-history
 ```
 
 ### Zplug
 
 ```zsh
-zplug "<you>/zsh-folder-history"
+zplug "Coqueiro/zsh-folder-history"
 ```
 
-Aliases are still opt-in. The default shell bindings are enabled on load:
+## Quick start
+
+Once sourced, the default bindings are:
 
 - `Ctrl-H`: folder picker
 - `Ctrl-K`: command picker
 - inside folder picker, `Ctrl-K`: command picker for the highlighted directory
 
-To disable default binding setup:
-
-```zsh
-export ZSH_FOLDER_HISTORY_AUTO_BIND=0
-```
-
-## Usage
-
-Quick test without touching `~/.zshrc`:
-
-```zsh
-~/Github/zsh-folder-history/bin/zfh
-~/Github/zsh-folder-history/bin/zfh list
-~/Github/zsh-folder-history/bin/zfh commands ~/Github
-~/Github/zsh-folder-history/bin/zfh command-pick ~/Github
-```
-
-Notes for the wrapper:
-
-- It sources the plugin and runs `zfh` in that shell process.
-- It is good for `list`, `commands`, and basic picker testing.
-- It is also good for `command-pick`, because that command prints the selected command.
-- Because it runs as a standalone process, any `cd` done there cannot change your parent shell directory.
-
-For real shell integration later, source the plugin from `~/.zshrc` and call `zfh` from the interactive shell.
-
-For live testing with hooks + Ctrl-H/Ctrl-K, a temporary file was also created:
-
-```zsh
-source ~/.zshrc.zfh
-```
-
-That test file:
-
-- sources the plugin into your current interactive shell
-- enables the optional aliases
-- enables auto-bind for both widgets
-- uses a separate state file: `~/.local/state/zsh-folder-history-test/directories`
-- uses a separate commands file: `~/.local/state/zsh-folder-history-test/commands.tsv`
-
-To remove the hooks from the current shell session after testing:
-
-```zsh
-zfh_unload
-```
-
-Once sourced, usage is:
+Main commands:
 
 ```zsh
 zfh
 zfh list
 zfh commands
-zfh commands ~/Github
-zfh command-pick ~/Github
-zfh bindkey '^H'
-zfh bind-command-key '^K'
+zfh command-pick
 ```
 
-### Commands
-
-- `zfh` or `zfh pick [query]`: open picker and `cd` to selection
-- `zfh list`: print tracked directories
-- `zfh commands [dir]`: print persisted timestamped commands for a directory
-- `zfh command-pick [dir] [query]`: search commands for one directory and print the selected command
-- `zfh bindkey [key]`: register the zle widget and bind a key (default: `^H`)
-- `zfh bind-command-key [key]`: register the command picker widget and bind a key (default: `^K`)
-- `zfh help`: print help
-
-Shortcut summary:
-
-- `Ctrl-H`: open folder picker
-- `Ctrl-K`: open command picker directly
-- with `ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=1`, inside folder picker `Ctrl-K`: open command picker for highlighted directory
-
-Run `zfh --help` to see the same instructions from the shell.
-
-Inside the command picker, the main list shows timestamp + truncated command line, and the preview shows the full command.
-
-If you also want aliases:
+If you want to try the wrapper from the repo checkout:
 
 ```zsh
-export ZSH_FOLDER_HISTORY_ENABLE_ALIASES=1
-source ~/Github/zsh-folder-history/zsh-folder-history.plugin.zsh
+./bin/zfh
+./bin/zfh list
+./bin/zfh commands "$HOME"
 ```
+
+Notes for the wrapper:
+
+- it sources the plugin and runs `zfh` in that shell process
+- it is useful for `list`, `commands`, and `command-pick`
+- because it runs in a child process, it cannot change the parent shell directory
 
 ## Configuration
 
@@ -191,14 +116,14 @@ export ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY='ctrl-k'
 - `ZSH_FOLDER_HISTORY_COMMANDS_FILE`: path for persisted command history
 - `ZSH_FOLDER_HISTORY_MAX_DIRS`: max persisted directories
 - `ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR`: max persisted commands per directory
-- `ZSH_FOLDER_HISTORY_AUTO_BIND`: enable/disable default widget binding on load
-- `ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER`: enable/disable automatic folder-widget binding
-- `ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND`: enable/disable automatic command-widget binding
+- `ZSH_FOLDER_HISTORY_AUTO_BIND`: enable or disable default widget binding on load
+- `ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER`: enable or disable automatic folder-widget binding
+- `ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND`: enable or disable automatic command-widget binding
 - `ZSH_FOLDER_HISTORY_BINDKEY`: key for folder picker binding
 - `ZSH_FOLDER_HISTORY_COMMAND_BINDKEY`: key for command picker binding
-- `ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK`: enable/disable command search from inside folder picker
+- `ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK`: enable or disable command search from inside folder picker
 - `ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY`: key used inside folder picker to open command search
-- `ZSH_FOLDER_HISTORY_ENABLE_ALIASES`: enable/disable aliases like `folder-history`
+- `ZSH_FOLDER_HISTORY_ENABLE_ALIASES`: enable or disable aliases like `folder-history`
 
 Defaults:
 
@@ -215,15 +140,23 @@ Defaults:
 - `ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK`: `1`
 - `ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY`: `ctrl-k`
 
+## How it works
+
+- Directory history is appended on navigation and compacted when `zfh` folder-history commands run.
+- Command history is appended on execution and trimmed only for the requested directory.
+- Command previews are generated lazily so the picker opens faster.
+
 ## Tests
 
-Run the lightweight zsh test suite:
-
 ```zsh
+zsh -n zsh-folder-history.plugin.zsh
 zsh tests/run.zsh
 ```
 
-## Roadmap
+## Contributing
 
-- improve picker actions beyond plain `cd`
-- add automated tests
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+MIT.
