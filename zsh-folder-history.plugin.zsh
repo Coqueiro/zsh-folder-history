@@ -723,7 +723,7 @@ zfh_pick() {
   fzf_args=(
     --prompt='folder-history> '
     --preview="$(_zfh_fzf_dir_preview_command)"
-    --preview-window='right,60%,wrap,nohidden'
+    --preview-window='right,60%,wrap,hidden'
     --query "$query"
   )
 
