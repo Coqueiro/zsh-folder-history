@@ -657,6 +657,24 @@ _zfh_build_picker_input() {
   print -rl -- "${_zfh_dirs[@]}"
 }
 
+_zfh_dir_index() {
+  emulate -L zsh
+
+  local target_dir="${1:A}"
+  local dir
+  local -i index=0
+
+  for dir in "${_zfh_dirs[@]}"; do
+    (( index++ ))
+    [[ "$dir" == "$target_dir" ]] && {
+      print -r -- "$index"
+      return 0
+    }
+  done
+
+  print -r -- 0
+}
+
 _zfh_build_command_picker_input() {
   emulate -L zsh
 
@@ -702,6 +720,8 @@ zfh_pick() {
 
   local query="$*"
   local output key selection selected_dir selected_command
+  local -i restore_index=0
+  local -i selected_index=0
   local exit_code
   local -a fzf_args=()
 
@@ -727,7 +747,11 @@ zfh_pick() {
   fi
 
   while true; do
-    output="$(_zfh_build_picker_input | fzf "${fzf_args[@]}")"
+    if (( restore_index > 0 )); then
+      output="$(_zfh_build_picker_input | fzf "${fzf_args[@]}" --bind "start:pos($restore_index)")"
+    else
+      output="$(_zfh_build_picker_input | fzf "${fzf_args[@]}")"
+    fi
     exit_code=$?
 
     (( exit_code == 0 )) || return $exit_code
@@ -746,11 +770,17 @@ zfh_pick() {
     fi
 
     selected_dir="$selection"
+    selected_index=$(_zfh_dir_index "$selected_dir")
+    restore_index=0
 
     if (( ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK )) && [[ "$key" == "$ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY" ]]; then
       [[ -n $selected_dir ]] || continue
       selected_command="$(zfh_command_pick "$selected_dir")"
       exit_code=$?
+      if (( exit_code == 130 )); then
+        restore_index=$selected_index
+        continue
+      fi
       (( exit_code == 0 )) || return $exit_code
       _zfh_last_selected_command="$selected_command"
       if (( !_zfh_widget_active )) && [[ -n $selected_command ]]; then

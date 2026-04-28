@@ -33,6 +33,30 @@ FAKE_BIN="$TEST_DIR/bin"
 mkdir -p "$FAKE_BIN"
 cat >| "$FAKE_BIN/fzf" <<'EOF'
 #!/bin/sh
+if [ -n "$FAKE_FZF_LOG_FILE" ]; then
+  printf '%s\n' "$*" >> "$FAKE_FZF_LOG_FILE"
+fi
+
+if [ -n "$FAKE_FZF_OUTPUTS_DIR" ]; then
+  counter_file="$FAKE_FZF_OUTPUTS_DIR/.counter"
+  if [ -f "$counter_file" ]; then
+    count=$(cat "$counter_file")
+  else
+    count=0
+  fi
+  count=$((count + 1))
+  printf '%s' "$count" > "$counter_file"
+
+  out_file="$FAKE_FZF_OUTPUTS_DIR/$count.out"
+  rc_file="$FAKE_FZF_OUTPUTS_DIR/$count.rc"
+
+  [ -f "$out_file" ] && cat "$out_file"
+  if [ -f "$rc_file" ]; then
+    exit "$(cat "$rc_file")"
+  fi
+  exit 0
+fi
+
 cat "$FAKE_FZF_OUTPUT_FILE"
 EOF
 chmod +x "$FAKE_BIN/fzf"
@@ -170,6 +194,50 @@ EOF
 assert_contains "$widget_buffer_state" "PWD=$selected_dir" 'zfh_widget should still change directory when buffer is non-empty'
 assert_contains "$widget_buffer_state" 'BUFFER=ls ~' 'zfh_widget should restore the original buffer text'
 assert_contains "$widget_buffer_state" 'CURSOR=3' 'zfh_widget should restore the original cursor position'
+
+restore_dir_a="$TEST_DIR/restore-a"
+restore_dir_b="$TEST_DIR/restore-b"
+restore_dir_c="$TEST_DIR/restore-c"
+mkdir -p "$restore_dir_a" "$restore_dir_b" "$restore_dir_c"
+restore_dir_a="${restore_dir_a:A}"
+restore_dir_b="${restore_dir_b:A}"
+restore_dir_c="${restore_dir_c:A}"
+export restore_dir_b
+printf '%s\n%s\n%s\n' "$restore_dir_a" "$restore_dir_b" "$restore_dir_c" >| "$ZSH_FOLDER_HISTORY_FILE"
+
+zsh -f <<'EOF'
+source "$ZFH_PLUGIN_FILE"
+_zfh_record_command "$restore_dir_b" 'echo restore'
+EOF
+
+export FAKE_FZF_OUTPUTS_DIR="$TEST_DIR/fzf-seq"
+mkdir -p "$FAKE_FZF_OUTPUTS_DIR"
+export FAKE_FZF_LOG_FILE="$TEST_DIR/fzf-seq.log"
+: >| "$FAKE_FZF_LOG_FILE"
+
+printf 'alt-j\n%s\n' "$restore_dir_b" >| "$FAKE_FZF_OUTPUTS_DIR/1.out"
+printf '0' >| "$FAKE_FZF_OUTPUTS_DIR/1.rc"
+: >| "$FAKE_FZF_OUTPUTS_DIR/2.out"
+printf '130' >| "$FAKE_FZF_OUTPUTS_DIR/2.rc"
+printf '%s\n' "$restore_dir_b" >| "$FAKE_FZF_OUTPUTS_DIR/3.out"
+printf '0' >| "$FAKE_FZF_OUTPUTS_DIR/3.rc"
+
+restore_state=$(zsh -f <<'EOF'
+source "$ZFH_PLUGIN_FILE"
+_zfh_refresh_dirs
+cd "$HOME"
+zfh_pick >/dev/null
+print -r -- "PWD=$PWD"
+EOF
+)
+
+assert_contains "$restore_state" "PWD=$restore_dir_b" 'Esc from command picker should return to folder picker and keep selection usable'
+
+fzf_log=$(<"$FAKE_FZF_LOG_FILE")
+assert_contains "$fzf_log" 'start:pos(3)' 'folder picker should reopen at the previous folder index after Esc from command picker'
+
+unset FAKE_FZF_OUTPUTS_DIR
+unset FAKE_FZF_LOG_FILE
 
 raw_file=$(<"$command_file")
 assert_contains "$raw_file" $'echo hello' 'per-dir commands file should contain first command'
