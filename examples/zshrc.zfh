@@ -2,7 +2,7 @@
 # Adjust the plugin path to wherever you cloned zsh-folder-history.
 
 export ZSH_FOLDER_HISTORY_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/zsh-folder-history-test/directories"
-export ZSH_FOLDER_HISTORY_COMMANDS_FILE="${ZSH_FOLDER_HISTORY_FILE:h}/commands.tsv"
+export ZSH_FOLDER_HISTORY_COMMANDS_DIR="${ZSH_FOLDER_HISTORY_FILE:h}/commands"
 export ZSH_FOLDER_HISTORY_ENABLE_ALIASES=1
 export ZSH_FOLDER_HISTORY_AUTO_BIND=1
 export ZSH_FOLDER_HISTORY_BINDKEY='^H'
