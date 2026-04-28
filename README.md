@@ -10,7 +10,7 @@ Track the directories you visit and the commands you run there, then jump back w
 - Records visited directories across shell sessions.
 - Records commands per directory across shell sessions.
 - Opens a folder picker with `Ctrl-H` by default.
-- Opens a command picker with `Ctrl-K` by default.
+- Opens a command picker with `Alt-J` by default.
 - Lets you open command search for the highlighted folder from inside the folder picker.
 
 ## Requirements
@@ -43,8 +43,8 @@ plugins=(git zsh-folder-history)
 Default bindings:
 
 - `Ctrl-H`: folder picker
-- `Ctrl-K`: command picker
-- inside folder picker, `Ctrl-K`: command picker for the highlighted directory
+- `Alt-J`: command picker
+- inside folder picker, `Alt-J`: command picker for the highlighted directory
 
 If you already have a command in the prompt, `Ctrl-H` changes directory and keeps your command line intact.
 
@@ -81,9 +81,9 @@ Defaults:
 | `ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER` | `1` | enable automatic folder-picker binding |
 | `ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND` | `1` | enable automatic command-picker binding |
 | `ZSH_FOLDER_HISTORY_BINDKEY` | `^H` | folder picker key |
-| `ZSH_FOLDER_HISTORY_COMMAND_BINDKEY` | `^K` | command picker key |
+| `ZSH_FOLDER_HISTORY_COMMAND_BINDKEY` | `^[j` | command picker key |
 | `ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK` | `1` | enable command search inside folder picker |
-| `ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY` | `ctrl-k` | key used inside folder picker to open command search |
+| `ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY` | `alt-j` | key used inside folder picker to open command search |
 | `ZSH_FOLDER_HISTORY_ENABLE_ALIASES` | `0` | enable aliases like `folder-history` |
 
 Common tweaks:

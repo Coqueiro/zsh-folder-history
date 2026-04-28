@@ -57,7 +57,7 @@ source "$ZFH_PLUGIN_FILE"
 [[ -f $ZSH_FOLDER_HISTORY_FILE ]] || exit 11
 [[ -d $ZSH_FOLDER_HISTORY_COMMANDS_DIR ]] || exit 12
 [[ "$(bindkey '^H')" == *'zfh_widget'* ]] || exit 15
-[[ "$(bindkey '^K')" == *'zfh_command_widget'* ]] || exit 16
+[[ "$(bindkey '^[j')" == *'zfh_command_widget'* ]] || exit 16
 EOF
 
 test_exit_code=$?

@@ -18,9 +18,9 @@ zmodload zsh/datetime 2>/dev/null || true
 : ${ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER:=1}
 : ${ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND:=1}
 : ${ZSH_FOLDER_HISTORY_BINDKEY:=^H}
-: ${ZSH_FOLDER_HISTORY_COMMAND_BINDKEY:=^K}
+: ${ZSH_FOLDER_HISTORY_COMMAND_BINDKEY:=^[j}
 : ${ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK:=1}
-: ${ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY:=ctrl-k}
+: ${ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY:=alt-j}
 : ${ZSH_FOLDER_HISTORY_ENABLE_ALIASES:=0}
 
 typeset -ga _zfh_dirs=()
@@ -924,11 +924,11 @@ Usage:
 Notes:
   - Commands are timestamped and persisted across shell sessions.
   - Per-folder command history limit defaults to 1000 entries.
-  - Default bindings: Ctrl-H opens folders and Ctrl-K opens command search.
+  - Default bindings: Ctrl-H opens folders and Alt-J opens command search.
   - Disable automatic binding with ZSH_FOLDER_HISTORY_AUTO_BIND=0.
   - Disable the folder widget with ZSH_FOLDER_HISTORY_AUTO_BIND_FOLDER=0.
   - Disable the command widget with ZSH_FOLDER_HISTORY_AUTO_BIND_COMMAND=0.
-  - Inside the folder picker, ctrl-k opens command search by default.
+  - Inside the folder picker, alt-j opens command search by default.
   - Disable folder-picker command search with ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=0.
   - Folder history appends on navigation and compacts when zfh folder-history commands run.
   - Command history appends on execution and trims only for the requested directory.
