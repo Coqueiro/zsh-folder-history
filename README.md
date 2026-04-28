@@ -46,6 +46,8 @@ Default bindings:
 - `Ctrl-K`: command picker
 - inside folder picker, `Ctrl-K`: command picker for the highlighted directory
 
+If you already have a command in the prompt, `Ctrl-H` changes directory and keeps your command line intact.
+
 Commands:
 
 ```zsh

@@ -7,6 +7,7 @@ typeset -g __zsh_folder_history_loaded=1
 typeset -g _zfh_plugin_file=${${(%):-%x}:A}
 
 autoload -U add-zsh-hook
+autoload -U add-zle-hook-widget 2>/dev/null || true
 zmodload zsh/datetime 2>/dev/null || true
 
 : ${ZSH_FOLDER_HISTORY_FILE:=${XDG_STATE_HOME:-$HOME/.local/state}/zsh-folder-history/directories}
@@ -27,6 +28,7 @@ typeset -gA _zfh_command_file_cache=()
 typeset -gi _zfh_internal_cd=0
 typeset -gi _zfh_folder_widget_registered=0
 typeset -gi _zfh_command_widget_registered=0
+typeset -gi _zfh_line_init_hook_registered=0
 typeset -gi _zfh_lock_fd=-1
 typeset -gi _zfh_widget_active=0
 typeset -gi _zfh_record_seq=0
@@ -34,6 +36,8 @@ typeset -g _zfh_lock_backend=''
 typeset -g _zfh_lock_dir=''
 typeset -g _zfh_last_selected_command=''
 typeset -g _zfh_last_selected_dir=''
+typeset -g _zfh_pending_buffer=''
+typeset -gi _zfh_pending_cursor=-1
 
 _zfh_dedupe_limit() {
   emulate -L zsh
@@ -792,6 +796,29 @@ _zfh_register_widget() {
     zle -N zfh_command_widget
     _zfh_command_widget_registered=1
   }
+
+  (( _zfh_line_init_hook_registered )) || {
+    add-zle-hook-widget line-init _zfh_restore_pending_buffer 2>/dev/null || true
+    _zfh_line_init_hook_registered=1
+  }
+}
+
+_zfh_queue_buffer_restore() {
+  emulate -L zsh
+
+  _zfh_pending_buffer=$1
+  _zfh_pending_cursor=$2
+}
+
+_zfh_restore_pending_buffer() {
+  emulate -L zsh
+
+  (( _zfh_pending_cursor >= 0 )) || return 0
+
+  BUFFER=$_zfh_pending_buffer
+  CURSOR=$_zfh_pending_cursor
+  _zfh_pending_buffer=''
+  _zfh_pending_cursor=-1
 }
 
 zfh_widget() {
@@ -799,7 +826,10 @@ zfh_widget() {
 
   local original_buffer=$BUFFER
   local original_cursor=$CURSOR
+  local had_original_buffer=0
   local exit_code
+
+  [[ -n $original_buffer ]] && had_original_buffer=1
 
   BUFFER=''
   CURSOR=0
@@ -813,7 +843,13 @@ zfh_widget() {
   if [[ -n $_zfh_last_selected_command ]]; then
     BUFFER=$_zfh_last_selected_command
     CURSOR=${#BUFFER}
-  elif (( exit_code == 0 )) && [[ -n $_zfh_last_selected_dir && -z $original_buffer ]]; then
+  elif (( exit_code == 0 )) && [[ -n $_zfh_last_selected_dir ]] && (( ! had_original_buffer )); then
+    BUFFER=''
+    CURSOR=0
+    zle accept-line
+    return 0
+  elif (( exit_code == 0 )) && [[ -n $_zfh_last_selected_dir ]]; then
+    _zfh_queue_buffer_restore "$original_buffer" "$original_cursor"
     BUFFER=''
     CURSOR=0
     zle accept-line
@@ -961,6 +997,7 @@ zfh_unload() {
   emulate -L zsh
   add-zsh-hook -d preexec _zfh_preexec 2>/dev/null
   add-zsh-hook -d chpwd _zfh_chpwd 2>/dev/null
+  add-zle-hook-widget -d line-init _zfh_restore_pending_buffer 2>/dev/null
   unalias folder-history 2>/dev/null
   unalias zsh-folder-history 2>/dev/null
   unset __zsh_folder_history_loaded

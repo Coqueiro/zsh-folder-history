@@ -116,6 +116,61 @@ EOF
 assert_contains "$pick_state" "PWD=$selected_dir" 'zfh_pick should cd into selected directory'
 assert_contains "$pick_state" "DIR=$selected_dir" 'zfh_pick should record selected directory for widget flow'
 
+widget_like_state=$(zsh -f <<'EOF'
+source "$ZFH_PLUGIN_FILE"
+cd "$HOME"
+_zfh_widget_active=1
+zfh_pick >/dev/null
+print -r -- "PWD=$PWD"
+print -r -- "DIR=$_zfh_last_selected_dir"
+print -r -- "CMD=$_zfh_last_selected_command"
+EOF
+)
+
+assert_contains "$widget_like_state" "PWD=$selected_dir" 'widget-like folder picks should still change directory'
+assert_contains "$widget_like_state" "DIR=$selected_dir" 'widget-like folder picks should keep selected directory'
+assert_contains "$widget_like_state" "CMD=" 'widget-like folder picks should not inject a command when selecting a folder'
+
+widget_buffer_state=$(zsh -fi <<'EOF'
+source "$ZFH_PLUGIN_FILE"
+BUFFER='ls ~'
+CURSOR=3
+LBUFFER=${BUFFER[1,CURSOR]}
+RBUFFER=${BUFFER[CURSOR+1,-1]}
+
+zle() {
+  case "$1" in
+    (-I)
+      return 0
+      ;;
+    (accept-line)
+      BUFFER=''
+      CURSOR=0
+      _zfh_restore_pending_buffer
+      return 0
+      ;;
+    (reset-prompt)
+      return 0
+      ;;
+    (*)
+      return 0
+      ;;
+  esac
+}
+
+cd "$HOME"
+zfh_widget
+print -r -- "PWD=$PWD"
+print -r -- "BUFFER=$BUFFER"
+print -r -- "CURSOR=$CURSOR"
+print -r -- "STACK=$(fc -ln -1)"
+EOF
+)
+
+assert_contains "$widget_buffer_state" "PWD=$selected_dir" 'zfh_widget should still change directory when buffer is non-empty'
+assert_contains "$widget_buffer_state" 'BUFFER=ls ~' 'zfh_widget should restore the original buffer text'
+assert_contains "$widget_buffer_state" 'CURSOR=3' 'zfh_widget should restore the original cursor position'
+
 raw_file=$(<"$command_file")
 assert_contains "$raw_file" $'echo hello' 'per-dir commands file should contain first command'
 assert_contains "$raw_file" $'echo world' 'per-dir commands file should contain second command'
