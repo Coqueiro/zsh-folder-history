@@ -85,6 +85,7 @@ Defaults:
 | `ZSH_FOLDER_HISTORY_COMMAND_BINDKEY` | `^[j` | command picker key |
 | `ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK` | `1` | enable command search inside folder picker |
 | `ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY` | `alt-j` | key used inside folder picker to open command search |
+| `ZSH_FOLDER_HISTORY_PREVIEW_TOGGLE_KEY` | `ctrl-p` | key to toggle preview in folder picker (state persists across command picker) |
 | `ZSH_FOLDER_HISTORY_ENABLE_ALIASES` | `0` | enable aliases like `folder-history` |
 
 > **Note:** `Ctrl-H` (`^H`) is also the Backspace key in many terminals. If this conflicts with your setup, change the binding with `ZSH_FOLDER_HISTORY_BINDKEY`.

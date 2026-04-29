@@ -26,6 +26,7 @@ fi
 : ${ZSH_FOLDER_HISTORY_COMMAND_BINDKEY:=^[j}
 : ${ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK:=1}
 : ${ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY:=alt-j}
+: ${ZSH_FOLDER_HISTORY_PREVIEW_TOGGLE_KEY:=ctrl-p}
 : ${ZSH_FOLDER_HISTORY_ENABLE_ALIASES:=0}
 
 typeset -ga _zfh_dirs=()
@@ -709,6 +710,8 @@ zfh_pick() {
   local -i selected_index=0
   local exit_code
   local -a fzf_args=()
+  local preview_state_file preview_window_opt
+  local -a restore_binds=()
 
   command -v fzf >/dev/null 2>&1 || {
     print -u2 -- 'zfh: fzf is required'
@@ -720,11 +723,21 @@ zfh_pick() {
   _zfh_add_dir "$PWD"
   _zfh_refresh_dirs
 
+  preview_state_file=$(command mktemp "${TMPDIR:-/tmp}/zfh-preview.XXXXXX") || return 1
+  : >| "$preview_state_file"
+
+  local _zfh_toggle_script="${preview_state_file}.sh"
+  cat >| "$_zfh_toggle_script" <<TOGGLE_EOF
+#!/bin/sh
+printf t >> ${(q)preview_state_file}
+TOGGLE_EOF
+  chmod +x "$_zfh_toggle_script"
+
   fzf_args=(
     --prompt='folder-history> '
     --preview="$(_zfh_fzf_dir_preview_command)"
-    --preview-window='right,60%,wrap,hidden'
     --query "$query"
+    --bind "${ZSH_FOLDER_HISTORY_PREVIEW_TOGGLE_KEY}:toggle-preview+execute-silent(${(q)_zfh_toggle_script})"
   )
 
   if (( ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK )); then
@@ -732,14 +745,24 @@ zfh_pick() {
   fi
 
   while true; do
-    if (( restore_index > 0 )); then
-      output="$(_zfh_build_picker_input | fzf "${fzf_args[@]}" --bind "load:pos($restore_index)")"
+    if [[ -r $preview_state_file ]] && (( ${#$(<"$preview_state_file")} % 2 == 1 )); then
+      preview_window_opt='right,60%,wrap,nohidden'
     else
-      output="$(_zfh_build_picker_input | fzf "${fzf_args[@]}")"
+      preview_window_opt='right,60%,wrap,hidden'
     fi
+
+    restore_binds=()
+    if (( restore_index > 0 )); then
+      restore_binds+=(--bind "load:pos($restore_index)")
+    fi
+
+    output="$(_zfh_build_picker_input | fzf "${fzf_args[@]}" --preview-window="$preview_window_opt" "${restore_binds[@]}")"
     exit_code=$?
 
-    (( exit_code == 0 )) || return $exit_code
+    (( exit_code == 0 )) || {
+      command rm -f -- "$preview_state_file" "$_zfh_toggle_script"
+      return $exit_code
+    }
 
     if (( ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK )); then
       if [[ "$output" == *$'\n'* ]]; then
@@ -766,16 +789,22 @@ zfh_pick() {
         restore_index=$selected_index
         continue
       fi
-      (( exit_code == 0 )) || return $exit_code
+      (( exit_code == 0 )) || {
+        command rm -f -- "$preview_state_file" "$_zfh_toggle_script"
+        return $exit_code
+      }
       _zfh_last_selected_command="$selected_command"
       if (( !_zfh_widget_active )) && [[ -n $selected_command ]]; then
         print -r -- "$selected_command"
       fi
+      command rm -f -- "$preview_state_file" "$_zfh_toggle_script"
       return 0
     fi
 
     break
   done
+
+  command rm -f -- "$preview_state_file" "$_zfh_toggle_script"
 
   [[ -n $selected_dir ]] || return 0
 
@@ -988,7 +1017,8 @@ Notes:
   - Disable folder-picker command search with ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK=0.
   - Folder history appends on navigation and compacts when zfh folder-history commands run.
   - Command history appends on execution and trims only for the requested directory.
-  - Preview panes are forced visible by default.
+  - Folder preview pane is hidden by default; toggle with the preview key.
+  - Preview toggle state is preserved when returning from command picker.
   - Environment variables:
       ZSH_FOLDER_HISTORY_FILE
       ZSH_FOLDER_HISTORY_COMMANDS_DIR
@@ -1001,6 +1031,7 @@ Notes:
       ZSH_FOLDER_HISTORY_COMMAND_BINDKEY
       ZSH_FOLDER_HISTORY_ENABLE_FZF_COMMAND_PICK
       ZSH_FOLDER_HISTORY_FZF_OPEN_COMMANDS_KEY
+      ZSH_FOLDER_HISTORY_PREVIEW_TOGGLE_KEY
       ZSH_FOLDER_HISTORY_ENABLE_ALIASES
   - Source this plugin from your shell config; it cannot cd when executed as a script.
 EOF
