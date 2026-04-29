@@ -733,7 +733,7 @@ zfh_pick() {
 
   while true; do
     if (( restore_index > 0 )); then
-      output="$(_zfh_build_picker_input | fzf "${fzf_args[@]}" --bind "start:pos($restore_index)")"
+      output="$(_zfh_build_picker_input | fzf "${fzf_args[@]}" --bind "load:pos($restore_index)")"
     else
       output="$(_zfh_build_picker_input | fzf "${fzf_args[@]}")"
     fi
