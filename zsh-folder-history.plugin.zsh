@@ -160,25 +160,21 @@ _zfh_format_timestamp() {
   emulate -L zsh
 
   local epoch=$1
-  local formatted=''
 
   if (( _zfh_has_strftime )); then
-    strftime -s formatted '%Y-%m-%d %H:%M:%S' "$epoch"
-    print -r -- "$formatted"
+    strftime -s REPLY '%Y-%m-%d %H:%M:%S' "$epoch"
     return 0
   fi
 
-  if formatted=$(command date -r "$epoch" '+%Y-%m-%d %H:%M:%S' 2>/dev/null); then
-    print -r -- "$formatted"
+  if REPLY=$(command date -r "$epoch" '+%Y-%m-%d %H:%M:%S' 2>/dev/null); then
     return 0
   fi
 
-  if formatted=$(command date -d "@$epoch" '+%Y-%m-%d %H:%M:%S' 2>/dev/null); then
-    print -r -- "$formatted"
+  if REPLY=$(command date -d "@$epoch" '+%Y-%m-%d %H:%M:%S' 2>/dev/null); then
     return 0
   fi
 
-  print -r -- "$epoch"
+  REPLY=$epoch
 }
 
 _zfh_ensure_file() {
@@ -357,9 +353,85 @@ _zfh_trim_commands_for_dir() {
   return $exit_code
 }
 
+_zfh_write_dir_preview_script() {
+  emulate -L zsh
+
+  local target_file=$1
+
+  cat >| "$target_file" <<EOF
+#!/usr/bin/env zsh
+emulate -L zsh
+
+zmodload zsh/datetime 2>/dev/null || true
+
+typeset -gi _zfh_preview_has_strftime=0
+typeset -gi max_commands=${ZSH_FOLDER_HISTORY_MAX_COMMANDS_PER_DIR}
+typeset commands_dir=${(qqq)ZSH_FOLDER_HISTORY_COMMANDS_DIR}
+typeset dir raw command_file sortkey epoch command_text record rest formatted
+typeset -a records sorted kept
+typeset -A seen
+
+if whence -w strftime >/dev/null 2>&1; then
+  _zfh_preview_has_strftime=1
+fi
+
+dir="\${1:A}"
+raw=\$(cksum <<< "\$dir") || exit 1
+command_file="\$commands_dir/\${raw%% *}"
+
+[[ -r \$command_file ]] || {
+  print -r -- 'No commands recorded for this directory.'
+  exit 0
+}
+
+while IFS=\$'\t' read -r sortkey epoch command_text; do
+  [[ -n \$sortkey && -n \$epoch && -n \$command_text ]] || continue
+  record="\${sortkey}"\$'\t'"\${epoch}"\$'\t'"\${command_text}"
+  records+=("\$record")
+done < "\$command_file"
+
+sorted=("\${(On)records[@]}")
+
+for record in "\${sorted[@]}"; do
+  [[ -n \$record ]] || continue
+  (( \${+seen[\$record]} )) && continue
+  seen[\$record]=1
+  kept+=("\$record")
+  if (( max_commands > 0 && \${#kept[@]} >= max_commands )); then
+    break
+  fi
+done
+
+if (( \${#kept[@]} == 0 )); then
+  print -r -- 'No commands recorded for this directory.'
+  exit 0
+fi
+
+for record in "\${kept[@]}"; do
+  rest="\${record#*\$'\t'}"
+  epoch="\${rest%%\$'\t'*}"
+  command_text="\${rest#*\$'\t'}"
+
+  if (( _zfh_preview_has_strftime )); then
+    strftime -s formatted '%Y-%m-%d %H:%M:%S' "\$epoch"
+  elif formatted=\$(command date -r "\$epoch" '+%Y-%m-%d %H:%M:%S' 2>/dev/null); then
+    :
+  elif formatted=\$(command date -d "@\$epoch" '+%Y-%m-%d %H:%M:%S' 2>/dev/null); then
+    :
+  else
+    formatted=\$epoch
+  fi
+
+  print -r -- "[\$formatted] \$command_text"
+done
+EOF
+
+  chmod +x "$target_file"
+}
+
 _zfh_fzf_dir_preview_command() {
   emulate -L zsh
-  print -r -- "zsh -fc 'source \"\$1\"; shift; _zfh_print_commands_for_dir \"\$1\" 0' zsh ${_zfh_plugin_file:q} {}"
+  print -r -- "${1:q} {}"
 }
 
 _zfh_fzf_command_preview_command() {
@@ -411,7 +483,8 @@ _zfh_format_command_record() {
   epoch="${rest%%$'\t'*}"
   command_text="${rest#*$'\t'}"
 
-  print -r -- "[$(_zfh_format_timestamp "$epoch")] $command_text"
+  _zfh_format_timestamp "$epoch"
+  print -r -- "[$REPLY] $command_text"
 }
 
 _zfh_write_command_preview() {
@@ -434,12 +507,11 @@ _zfh_write_command_preview_fields() {
   local epoch=$2
   local command_text=$3
 
-  cat <<EOF
-Directory: $dir
-Timestamp: $(_zfh_format_timestamp "$epoch")
+  _zfh_format_timestamp "$epoch"
+  print -r -- "Directory: $dir
+Timestamp: $REPLY
 
-$command_text
-EOF
+$command_text"
 }
 
 _zfh_refresh_dirs() {
@@ -679,7 +751,8 @@ _zfh_build_command_picker_input() {
     command_text=${command_text//$'\n'/ ' ↩ '}
     command_text=${command_text//$'\t'/ }
 
-    display="[$(_zfh_format_timestamp "$epoch")] $command_text"
+    _zfh_format_timestamp "$epoch"
+    display="[$REPLY] $command_text"
     printf '%s\t%s\t%s\t%s\n' "$display" "$dir" "$epoch" "$command_text"
   done
 }
@@ -706,6 +779,7 @@ zfh_pick() {
 
   local query="$*"
   local output key selection selected_dir selected_command
+  local _zfh_toggle_script _zfh_preview_script
   local -i restore_index=0
   local -i selected_index=0
   local exit_code
@@ -726,16 +800,25 @@ zfh_pick() {
   preview_state_file=$(command mktemp "${TMPDIR:-/tmp}/zfh-preview.XXXXXX") || return 1
   : >| "$preview_state_file"
 
-  local _zfh_toggle_script="${preview_state_file}.sh"
+  _zfh_preview_script="${preview_state_file}.preview.zsh"
+  _zfh_write_dir_preview_script "$_zfh_preview_script" || {
+    command rm -f -- "$preview_state_file" "$_zfh_preview_script"
+    return 1
+  }
+
+  _zfh_toggle_script="${preview_state_file}.sh"
   cat >| "$_zfh_toggle_script" <<TOGGLE_EOF
 #!/bin/sh
 printf t >> ${(q)preview_state_file}
 TOGGLE_EOF
-  chmod +x "$_zfh_toggle_script"
+  chmod +x "$_zfh_toggle_script" || {
+    command rm -f -- "$preview_state_file" "$_zfh_toggle_script" "$_zfh_preview_script"
+    return 1
+  }
 
   fzf_args=(
     --prompt='folder-history> '
-    --preview="$(_zfh_fzf_dir_preview_command)"
+    --preview="$(_zfh_fzf_dir_preview_command "$_zfh_preview_script")"
     --query "$query"
     --bind "${ZSH_FOLDER_HISTORY_PREVIEW_TOGGLE_KEY}:toggle-preview+execute-silent(${(q)_zfh_toggle_script})"
   )
@@ -760,7 +843,7 @@ TOGGLE_EOF
     exit_code=$?
 
     (( exit_code == 0 )) || {
-      command rm -f -- "$preview_state_file" "$_zfh_toggle_script"
+      command rm -f -- "$preview_state_file" "$_zfh_toggle_script" "$_zfh_preview_script"
       return $exit_code
     }
 
@@ -790,21 +873,21 @@ TOGGLE_EOF
         continue
       fi
       (( exit_code == 0 )) || {
-        command rm -f -- "$preview_state_file" "$_zfh_toggle_script"
+        command rm -f -- "$preview_state_file" "$_zfh_toggle_script" "$_zfh_preview_script"
         return $exit_code
       }
       _zfh_last_selected_command="$selected_command"
       if (( !_zfh_widget_active )) && [[ -n $selected_command ]]; then
         print -r -- "$selected_command"
       fi
-      command rm -f -- "$preview_state_file" "$_zfh_toggle_script"
+      command rm -f -- "$preview_state_file" "$_zfh_toggle_script" "$_zfh_preview_script"
       return 0
     fi
 
     break
   done
 
-  command rm -f -- "$preview_state_file" "$_zfh_toggle_script"
+  command rm -f -- "$preview_state_file" "$_zfh_toggle_script" "$_zfh_preview_script"
 
   [[ -n $selected_dir ]] || return 0
 

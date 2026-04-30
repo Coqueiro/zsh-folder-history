@@ -236,6 +236,7 @@ assert_contains "$restore_state" "PWD=$restore_dir_b" 'Esc from command picker s
 
 fzf_log=$(<"$FAKE_FZF_LOG_FILE")
 assert_contains "$fzf_log" 'load:pos(3)' 'folder picker should reopen at the previous folder index after Esc from command picker'
+assert_contains "$fzf_log" '.preview.zsh {}' 'folder picker preview should use generated minimal preview script'
 
 unset FAKE_FZF_OUTPUTS_DIR
 unset FAKE_FZF_LOG_FILE
