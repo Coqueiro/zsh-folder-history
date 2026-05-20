@@ -92,21 +92,24 @@ test_exit_code=$?
 
 dir_a="$TEST_DIR/dir-a"
 dir_b="$TEST_DIR/dir-b"
-mkdir -p "$dir_a" "$dir_b"
+dir_c="$TEST_DIR/dir-c"
+mkdir -p "$dir_a" "$dir_b" "$dir_c"
 dir_a="${dir_a:A}"
 dir_b="${dir_b:A}"
-printf '%s\n%s\n%s\n' "$dir_a" "$dir_b" "$dir_a" >| "$ZSH_FOLDER_HISTORY_FILE"
+dir_c="${dir_c:A}"
+printf '%s\n%s\n%s\n%s\n' "$dir_a" "$dir_b" "$dir_c" "$dir_b" >| "$ZSH_FOLDER_HISTORY_FILE"
 
 zsh -f <<'EOF'
 source "$ZFH_PLUGIN_FILE"
 zfh list >/dev/null
 EOF
 
-dir_file_after=$(<"$ZSH_FOLDER_HISTORY_FILE")
-dir_line_count_after=$(wc -l < "$ZSH_FOLDER_HISTORY_FILE" | tr -d ' ')
-assert_eq "2" "$dir_line_count_after" 'directory history compaction should keep unique directories only'
-assert_contains "$dir_file_after" "$dir_a" 'directory history should keep first directory after compaction'
-assert_contains "$dir_file_after" "$dir_b" 'directory history should keep second directory after compaction'
+typeset -a compacted_dirs
+compacted_dirs=("${(@f)$(<"$ZSH_FOLDER_HISTORY_FILE")}")
+assert_eq "3" "${#compacted_dirs[@]}" 'directory history compaction should keep unique directories only'
+assert_eq "$dir_b" "${compacted_dirs[1]}" 'directory history should keep the most recently accessed directory first after compaction'
+assert_eq "$dir_c" "${compacted_dirs[2]}" 'directory history should preserve descending recency after compaction'
+assert_eq "$dir_a" "${compacted_dirs[3]}" 'directory history should keep the least recently accessed directory last after compaction'
 
 zsh -f <<'EOF'
 source "$ZFH_PLUGIN_FILE"

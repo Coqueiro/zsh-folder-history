@@ -287,6 +287,8 @@ _zfh_read_state_dirs() {
   emulate -L zsh
 
   local -a loaded=()
+  local -a recent_first=()
+  local -i index
 
   _zfh_ensure_state_file || return 1
 
@@ -294,7 +296,11 @@ _zfh_read_state_dirs() {
     loaded=("${(@f)$(<"$ZSH_FOLDER_HISTORY_FILE")}")
   fi
 
-  _zfh_filter_existing_dirs "${loaded[@]}"
+  for (( index = ${#loaded[@]}; index >= 1; index-- )); do
+    recent_first+=("${loaded[index]}")
+  done
+
+  _zfh_filter_existing_dirs "${recent_first[@]}"
 }
 
 _zfh_lock_file() {

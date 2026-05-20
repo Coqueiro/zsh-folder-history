@@ -8,6 +8,7 @@ Track the directories you visit and the commands you run there, then jump back w
 ## What it does
 
 - Records visited directories across shell sessions.
+- Shows directories in the picker from most recent to least recent access.
 - Records commands per directory across shell sessions.
 - Opens a folder picker with `Ctrl-H` by default.
 - Opens a command picker with `Alt-J` by default.
